@@ -1,0 +1,19 @@
+# Next.js
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Go
+backend/bin/
+backend/tmp/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
