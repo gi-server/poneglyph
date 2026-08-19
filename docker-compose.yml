@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: docunest_db
+    environment:
+      POSTGRES_USER: ${DB_USER:-docunest}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
+      POSTGRES_DB: ${DB_NAME:-docunest}
+    ports:
+      # Bind only to localhost — do not expose PostgreSQL to external interfaces
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # Resource limits to prevent a runaway container from exhausting host memory
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+    restart: unless-stopped
+
+volumes:
+  pgdata:
