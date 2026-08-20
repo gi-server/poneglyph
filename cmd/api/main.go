@@ -42,6 +42,9 @@ func main() {
 	api.HandleFunc("/login", handlers.Login).Methods("POST")
 	api.HandleFunc("/share/{token}", handlers.ViewSharedDocument).Methods("GET")
 
+	// Internal service-to-service routes (authenticated via X-Webhook-Secret, not JWT)
+	api.HandleFunc("/internal/webhook/analyze", handlers.AnalyzeWebhook).Methods("POST")
+
 	// Protected routes
 	protected := api.PathPrefix("/").Subrouter()
 	protected.Use(handlers.AuthMiddleware)

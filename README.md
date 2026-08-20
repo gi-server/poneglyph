@@ -28,34 +28,53 @@ DocuNest is built to strict security standards:
 
 ## Architecture
 
-1. **Frontend**: Single-page app built with Tailwind CSS and Alpine.js (zero build step).
-2. **Core API Server (Go)**: Fast, low-memory engine managing sessions, file handling, DB orchestration, and asynchronous processing pipelines.
-3. **OCR Engine (Python / FastAPI)**: Microservice executing PyMuPDF native extraction with Tesseract fallback for scanned images.
-4. **Intelligence Layer (Ollama)**: Local LLM service returning structured JSON classifications using the **`qwen2.5`** model.
-5. **Data Layer (PostgreSQL)**: Multi-tenant relational storage.
+DocuNest consists of two independent services:
+
+1. **DocuNest (Poneglyph)**: The core application — Go API server managing sessions, file handling, DB orchestration, users, customers, and human review workflows.
+2. **Great Sage**: An independent document intelligence engine responsible for OCR, AI classification, and structured metadata extraction. It runs as a separate Python/FastAPI service.
 
 ### System Flow Diagram
 
 ```mermaid
 sequenceDiagram
     participant User
-    participant GoAPI as Go Backend (API)
-    participant OCR as Python OCR Service
-    participant Ollama as Ollama (qwen2.5)
+    participant GoAPI as Poneglyph (Go API)
+    participant GS as Great Sage (Python)
     participant DB as PostgreSQL
 
     User->>GoAPI: Upload Document (PDF/Image)
     GoAPI->>DB: Save metadata (status: uploaded)
-    GoAPI->>OCR: POST /api/ocr (multipart/form-data)
-    OCR-->>GoAPI: Return extracted text
-    GoAPI->>DB: Save OCR text (status: identifying)
-    GoAPI->>Ollama: POST /api/generate (prompt + OCR text)
-    Ollama-->>GoAPI: Return JSON (type, name, dob, id)
-    GoAPI->>DB: Save AI results (status: needs_review)
+    GoAPI->>GS: POST /api/v1/analyze (file + document_id)
+    GS-->>GoAPI: 202 Accepted
+    GoAPI->>DB: Update status: processing
+    Note over GS: Background: OCR → Tesseract → Ollama/qwen2.5
+    GS->>GoAPI: POST /api/internal/webhook/analyze (result)
+    GoAPI->>DB: Save OCR text + classification (status: needs_review)
     GoAPI-->>User: Document ready for manual review
     User->>GoAPI: Confirm/Edit AI Extraction
     GoAPI->>DB: Map to Customer (status: completed)
 ```
+
+### Service Boundaries
+
+| Responsibility | Owner |
+|---|---|
+| Users, auth, sessions | Poneglyph |
+| Customers, PostgreSQL | Poneglyph |
+| Document storage, sharing | Poneglyph |
+| Human review, audit logs | Poneglyph |
+| Frontend | Poneglyph |
+| OCR, Tesseract | Great Sage |
+| Ollama, qwen2.5 | Great Sage |
+| AI classification | Great Sage |
+| Structured extraction | Great Sage |
+
+Great Sage has **no direct access** to Poneglyph's database.
+
+### Other Components
+
+- **Frontend**: Single-page app built with Tailwind CSS and Alpine.js (zero build step).
+- **Data Layer (PostgreSQL)**: Multi-tenant relational storage.
 
 ---
 
@@ -67,6 +86,7 @@ sequenceDiagram
 - PostgreSQL (or Docker)
 - Ollama (Ensure the `qwen2.5` model is pulled: `ollama pull qwen2.5`)
 - Tesseract OCR (install via `winget install UB-Mannheim.TesseractOCR`)
+- Great Sage running on port 8000
 
 **Exact Ready-to-Go Commands**:
 
@@ -74,17 +94,17 @@ sequenceDiagram
    ```bash
    docker-compose up -d
    ```
-2. Install the required Python OCR dependencies:
+2. Set up and start Great Sage (in a separate terminal):
    ```bash
-   cd ocr_service
+   cd ..\great-sage
    pip install -r requirements.txt
-   cd ..
+   uvicorn app.main:app --host 127.0.0.1 --port 8000
    ```
 3. Pull the required AI model for Ollama:
    ```bash
    ollama pull qwen2.5
    ```
-4. Run the master orchestrator script (starts the Go Backend and Python OCR service together):
+4. Run the master orchestrator script (starts the Go Backend):
    ```powershell
    .\start.ps1
    ```
@@ -102,6 +122,7 @@ sequenceDiagram
 - **Customers**: `GET /api/customers`, `GET /api/customers/{id}/documents`
 - **Documents**: `GET /api/documents`, `POST /api/documents/upload`
 - **Processing**: `POST /api/documents/{id}/confirm`, `GET /api/documents/{id}/view`
+- **Internal**: `POST /api/internal/webhook/analyze` (Great Sage → Poneglyph callback)
 
 ---
 
@@ -110,4 +131,5 @@ sequenceDiagram
 1. **Secrets**: Generate a real `JWT_SECRET` (`openssl rand -base64 32`) and update the `.env` file.
 2. **HTTPS**: Terminate TLS via a reverse proxy (Nginx/Caddy) to ensure the `Secure` flag on cookies works properly.
 3. **Database SSL**: Set `DB_SSLMODE=require` in your `.env`.
-4. **Network**: Keep Ollama and the Python OCR service bound strictly to `127.0.0.1` or isolated in a private Docker network.
+4. **Network**: Keep Ollama and Great Sage bound strictly to `127.0.0.1` or isolated in a private Docker network.
+5. **Great Sage**: Must be deployed independently. See the [Great Sage README](../great-sage/README.md) for setup instructions.

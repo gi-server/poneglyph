@@ -24,7 +24,7 @@ type Document struct {
 	Filename         string    `json:"filename"`
 	Filepath         string    `json:"-"`
 	OriginalName     string    `json:"original_name"`
-	Status           string    `json:"status"` // uploaded, reading, identifying, organizing, needs_review, completed, failed
+	Status           string    `json:"status"` // uploaded, processing, needs_review, completed, failed
 	OCRText          *string   `json:"ocr_text,omitempty"`
 	DocumentType     *string   `json:"document_type,omitempty"`
 	PersonName       *string   `json:"person_name,omitempty"`
