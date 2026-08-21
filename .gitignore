@@ -1,19 +1,21 @@
-# Next.js
-frontend/node_modules/
-frontend/.next/
-frontend/out/
+# Go binaries
+*.exe
+server.exe
+main.exe
 
-# Environment / secrets
+# Environment secrets
 .env
 .env.*
 !.env.example
 
-# Go
-backend/bin/
-backend/tmp/
+# Uploaded documents (never commit user data)
+uploads/
 
-# Logs
-*.log
+# IDE and OS noise
+.idea/
+.vscode/
+*.DS_Store
+Thumbs.db
 
-# OS
-.DS_Store
+# Scratch files
+scratch/
