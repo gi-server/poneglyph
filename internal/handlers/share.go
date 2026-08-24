@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"docunest/internal/database"
+
 	"github.com/gorilla/mux"
 )
 
@@ -23,6 +24,7 @@ func generateToken(length int) string {
 }
 
 func CreateShareLink(w http.ResponseWriter, r *http.Request) {
+	workspaceID, _ := r.Context().Value(WorkspaceIDKey).(int)
 	userID, ok := r.Context().Value(UserIDKey).(int)
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -36,7 +38,7 @@ func CreateShareLink(w http.ResponseWriter, r *http.Request) {
 
 	if role != "admin" {
 		var exists bool
-		err := database.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM documents WHERE id = $1 AND user_id = $2)", docID, userID).Scan(&exists)
+		err := database.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM documents WHERE id = $1 AND workspace_id = $2)", docID, workspaceID).Scan(&exists)
 		if err != nil || !exists {
 			http.Error(w, "Document not found or access denied", http.StatusNotFound)
 			return
@@ -74,7 +76,7 @@ func CreateShareLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	LogEvent(userID, "share_link_created", map[string]interface{}{"document_id": docID, "expires_at": expiresAt})
+	LogEvent(workspaceID, userID, "share_link_created", map[string]interface{}{"document_id": docID, "expires_at": expiresAt})
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -136,13 +138,14 @@ func ViewSharedDocument(w http.ResponseWriter, r *http.Request) {
 	// Let's just log it using the document's owner
 	var ownerID int
 	database.DB.QueryRow("SELECT user_id FROM documents WHERE id = $1", docID).Scan(&ownerID)
-	LogEvent(ownerID, "share_link_accessed", map[string]interface{}{"document_id": docID, "token_prefix": token[:8]})
+	LogEvent(ownerID, 0, "share_link_accessed", map[string]interface{}{"document_id": docID, "token_prefix": token[:8]})
 
 	w.Header().Set("Content-Disposition", "inline")
 	http.ServeFile(w, r, absPath)
 }
 
 func RevokeShareLink(w http.ResponseWriter, r *http.Request) {
+	workspaceID, _ := r.Context().Value(WorkspaceIDKey).(int)
 	userID, ok := r.Context().Value(UserIDKey).(int)
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -157,7 +160,7 @@ func RevokeShareLink(w http.ResponseWriter, r *http.Request) {
 
 	if role != "admin" {
 		var exists bool
-		err := database.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM documents WHERE id = $1 AND user_id = $2)", docID, userID).Scan(&exists)
+		err := database.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM documents WHERE id = $1 AND workspace_id = $2)", docID, workspaceID).Scan(&exists)
 		if err != nil || !exists {
 			http.Error(w, "Document not found or access denied", http.StatusNotFound)
 			return
@@ -181,7 +184,7 @@ func RevokeShareLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	LogEvent(userID, "share_link_revoked", map[string]interface{}{"document_id": docID, "token_prefix": token[:8]})
+	LogEvent(workspaceID, userID, "share_link_revoked", map[string]interface{}{"document_id": docID, "token_prefix": token[:8]})
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"message": "Share link revoked successfully"})

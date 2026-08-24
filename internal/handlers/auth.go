@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"docunest/internal/database"
+
 	"github.com/alexedwards/argon2id"
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -47,8 +48,9 @@ type Claims struct {
 type contextKey string
 
 const (
-	UserIDKey contextKey = "user_id"
-	RoleKey   contextKey = "role"
+	UserIDKey      contextKey = "user_id"
+	RoleKey        contextKey = "role"
+	WorkspaceIDKey contextKey = "workspace_id"
 )
 
 // --- Login Brute-Force Rate Limiter ---
@@ -284,13 +286,28 @@ func AuthMiddleware(next http.Handler) http.Handler {
 		}
 
 		ctx := context.WithValue(r.Context(), UserIDKey, claims.UserID)
-		
+
 		var role string
-		err = database.DB.QueryRow("SELECT role FROM users WHERE id = $1", claims.UserID).Scan(&role)
+		var adminID sql.NullInt64
+		err = database.DB.QueryRow("SELECT role, admin_id FROM users WHERE id = $1", claims.UserID).Scan(&role, &adminID)
 		if err == nil {
 			ctx = context.WithValue(ctx, RoleKey, role)
+			
+			// Resolve WorkspaceID
+			var workspaceID int
+			if role == "admin" {
+				workspaceID = claims.UserID
+			} else if adminID.Valid {
+				workspaceID = int(adminID.Int64)
+			} else {
+				// Fallback, should not happen for properly created users
+				workspaceID = claims.UserID
+			}
+			ctx = context.WithValue(ctx, WorkspaceIDKey, workspaceID)
+
 		} else {
 			ctx = context.WithValue(ctx, RoleKey, "user") // default
+			ctx = context.WithValue(ctx, WorkspaceIDKey, claims.UserID)
 		}
 
 		next.ServeHTTP(w, r.WithContext(ctx))

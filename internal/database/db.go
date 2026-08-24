@@ -72,19 +72,20 @@ func InitSchema() error {
 		password_hash VARCHAR(255) NOT NULL,
 		role VARCHAR(50) DEFAULT 'user',
 		is_disabled BOOLEAN DEFAULT FALSE,
+		admin_id INT REFERENCES users(id),
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	);
 
 	CREATE TABLE IF NOT EXISTS customers (
 		id VARCHAR(50) PRIMARY KEY,
-		user_id INT REFERENCES users(id),
+		workspace_id INT REFERENCES users(id),
 		name VARCHAR(255) NOT NULL,
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	);
 
 	CREATE TABLE IF NOT EXISTS documents (
 		id SERIAL PRIMARY KEY,
-		user_id INT REFERENCES users(id),
+		workspace_id INT REFERENCES users(id),
 		filename VARCHAR(255) NOT NULL,
 		filepath VARCHAR(512) NOT NULL,
 		original_name VARCHAR(255) NOT NULL,
@@ -101,7 +102,8 @@ func InitSchema() error {
 
 	CREATE TABLE IF NOT EXISTS audit_logs (
 		id SERIAL PRIMARY KEY,
-		user_id INT REFERENCES users(id),
+		workspace_id INT REFERENCES users(id),
+		actor_id INT REFERENCES users(id),
 		document_id INT REFERENCES documents(id),
 		action VARCHAR(255) NOT NULL,
 		details JSONB,
@@ -122,19 +124,21 @@ func InitSchema() error {
 		return fmt.Errorf("error creating schema: %w", err)
 	}
 
-	// Safely add user_id to existing tables (ignoring errors if columns already exist)
-	DB.Exec("ALTER TABLE customers ADD COLUMN user_id INT REFERENCES users(id)")
-	DB.Exec("ALTER TABLE documents ADD COLUMN user_id INT REFERENCES users(id)")
-
-	// Safely add dob and document_id_number to existing tables
-	DB.Exec("ALTER TABLE documents ADD COLUMN dob VARCHAR(50)")
-	DB.Exec("ALTER TABLE documents ADD COLUMN document_id_number VARCHAR(100)")
-
-	// Safely add role and is_disabled to existing tables
+	// 1. Add missing columns safely
 	DB.Exec("ALTER TABLE users ADD COLUMN role VARCHAR(50) DEFAULT 'user'")
 	DB.Exec("ALTER TABLE users ADD COLUMN is_disabled BOOLEAN DEFAULT FALSE")
-	// If admin already exists, we should probably ensure the first user (id=1) is admin if no admin exists
-	// Or we can let auth.go handle seeding. It's safer.
+	DB.Exec("ALTER TABLE users ADD COLUMN admin_id INT REFERENCES users(id)")
+	
+	DB.Exec("ALTER TABLE documents ADD COLUMN dob VARCHAR(50)")
+	DB.Exec("ALTER TABLE documents ADD COLUMN document_id_number VARCHAR(100)")
+	DB.Exec("ALTER TABLE documents ADD COLUMN customer_id VARCHAR(50) REFERENCES customers(id)")
+	DB.Exec("ALTER TABLE audit_logs ADD COLUMN actor_id INT REFERENCES users(id)")
+
+	// 2. Rename existing columns to workspace_id where appropriate
+	// (Ignore errors if the column is already renamed or doesn't exist)
+	DB.Exec("ALTER TABLE customers RENAME COLUMN user_id TO workspace_id")
+	DB.Exec("ALTER TABLE documents RENAME COLUMN user_id TO workspace_id")
+	DB.Exec("ALTER TABLE audit_logs RENAME COLUMN user_id TO workspace_id")
 
 	log.Println("Database schema initialized")
 	return nil

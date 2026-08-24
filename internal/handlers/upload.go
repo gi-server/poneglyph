@@ -46,7 +46,8 @@ func init() {
 const maxUploadBytes = 15 << 20 // 15 MB hard cap
 
 func UploadDocument(w http.ResponseWriter, r *http.Request) {
-	userID, ok := r.Context().Value(UserIDKey).(int)
+	workspaceID, _ := r.Context().Value(WorkspaceIDKey).(int)
+	_, ok := r.Context().Value(UserIDKey).(int)
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
@@ -106,14 +107,14 @@ func UploadDocument(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Customer ID is required for existing customer", http.StatusBadRequest)
 			return
 		}
-		
+
 		role, _ := r.Context().Value(RoleKey).(string)
 		if role != "admin" {
 			// Verify the customer belongs to this user before accepting the ID
 			var exists bool
 			err := database.DB.QueryRow(
-				"SELECT EXISTS(SELECT 1 FROM customers WHERE id = $1 AND user_id = $2)",
-				customerID, userID,
+				"SELECT EXISTS(SELECT 1 FROM customers WHERE id = $1 AND workspace_id = $2)",
+				customerID, workspaceID,
 			).Scan(&exists)
 			if err != nil || !exists {
 				http.Error(w, "Customer not found or access denied", http.StatusForbidden)
@@ -152,9 +153,9 @@ func UploadDocument(w http.ResponseWriter, r *http.Request) {
 		cID = &customerID
 	}
 
-	query := `INSERT INTO documents (user_id, filename, filepath, original_name, status, customer_id) 
+	query := `INSERT INTO documents (workspace_id, filename, filepath, original_name, status, customer_id) 
 	          VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`
-	err = database.DB.QueryRow(query, userID, newFilename, filePath, originalName, "uploaded", cID).Scan(&docID)
+	err = database.DB.QueryRow(query, workspaceID, newFilename, filePath, originalName, "uploaded", cID).Scan(&docID)
 	if err != nil {
 		// Clean up the saved file if we couldn't create the DB record
 		os.Remove(filePath)
@@ -162,6 +163,13 @@ func UploadDocument(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to create database record", http.StatusInternalServerError)
 		return
 	}
+
+	// Log the upload event
+	userID := r.Context().Value(UserIDKey).(int)
+	LogEvent(workspaceID, userID, "document_uploaded", map[string]interface{}{
+		"document_id": docID,
+		"filename":    originalName,
+	})
 
 	// Submit the document to Great Sage for asynchronous OCR + AI processing.
 	// The goroutine updates the status to "processing" on success or "failed" on error.

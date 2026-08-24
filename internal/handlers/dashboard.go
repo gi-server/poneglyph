@@ -12,6 +12,7 @@ import (
 )
 
 func GetStats(w http.ResponseWriter, r *http.Request) {
+	workspaceID, _ := r.Context().Value(WorkspaceIDKey).(int)
 	userID, ok := r.Context().Value(UserIDKey).(int)
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -31,7 +32,7 @@ func GetStats(w http.ResponseWriter, r *http.Request) {
 	if isAdmin {
 		err = database.DB.QueryRow("SELECT COUNT(*) FROM documents").Scan(&stats.TotalDocuments)
 	} else {
-		err = database.DB.QueryRow("SELECT COUNT(*) FROM documents WHERE user_id = $1", userID).Scan(&stats.TotalDocuments)
+		err = database.DB.QueryRow("SELECT COUNT(*) FROM documents WHERE workspace_id = $1", workspaceID).Scan(&stats.TotalDocuments)
 	}
 	if err != nil {
 		http.Error(w, "Failed to get total documents", http.StatusInternalServerError)
@@ -41,7 +42,7 @@ func GetStats(w http.ResponseWriter, r *http.Request) {
 	if isAdmin {
 		err = database.DB.QueryRow("SELECT COUNT(*) FROM customers").Scan(&stats.TotalCustomers)
 	} else {
-		err = database.DB.QueryRow("SELECT COUNT(*) FROM customers WHERE user_id = $1", userID).Scan(&stats.TotalCustomers)
+		err = database.DB.QueryRow("SELECT COUNT(*) FROM customers WHERE workspace_id = $1", workspaceID).Scan(&stats.TotalCustomers)
 	}
 	if err != nil {
 		http.Error(w, "Failed to get total customers", http.StatusInternalServerError)
@@ -51,7 +52,7 @@ func GetStats(w http.ResponseWriter, r *http.Request) {
 	if isAdmin {
 		err = database.DB.QueryRow("SELECT COUNT(*) FROM documents WHERE DATE(created_at) = CURRENT_DATE").Scan(&stats.ProcessedToday)
 	} else {
-		err = database.DB.QueryRow("SELECT COUNT(*) FROM documents WHERE user_id = $1 AND DATE(created_at) = CURRENT_DATE", userID).Scan(&stats.ProcessedToday)
+		err = database.DB.QueryRow("SELECT COUNT(*) FROM documents WHERE workspace_id = $1 AND DATE(created_at) = CURRENT_DATE", userID).Scan(&stats.ProcessedToday)
 	}
 	if err != nil {
 		http.Error(w, "Failed to get today's documents", http.StatusInternalServerError)
@@ -66,6 +67,7 @@ func GetStats(w http.ResponseWriter, r *http.Request) {
 // their uploaded files from disk. This is irreversible.
 // The caller must supply {"confirmation": "wipe my data"} in the request body.
 func WipeDatabase(w http.ResponseWriter, r *http.Request) {
+	workspaceID, _ := r.Context().Value(WorkspaceIDKey).(int)
 	userID, ok := r.Context().Value(UserIDKey).(int)
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -94,7 +96,7 @@ func WipeDatabase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	LogEvent(userID, "data_wipe_started", map[string]interface{}{"action": "wipe my data"})
+	LogEvent(workspaceID, userID, "data_wipe_started", map[string]interface{}{"action": "wipe my data"})
 
 	// 1. Collect all file paths before deleting DB records
 	rows, err := database.DB.Query("SELECT filepath FROM documents")
@@ -164,7 +166,7 @@ func WipeDatabase(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("WipeDatabase: System wiped — %d files deleted, %d skipped", deleted, skipped)
-	LogEvent(userID, "data_wipe_completed", map[string]interface{}{"files_deleted": deleted})
+	LogEvent(workspaceID, userID, "data_wipe_completed", map[string]interface{}{"files_deleted": deleted})
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -173,4 +175,3 @@ func WipeDatabase(w http.ResponseWriter, r *http.Request) {
 		"files_skipped": skipped,
 	})
 }
-

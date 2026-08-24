@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -35,10 +36,16 @@
         }
     </script>
     <style>
-        body { font-family: 'Inter', sans-serif; }
+        body {
+            font-family: 'Inter', sans-serif;
+        }
     </style>
 </head>
-<body class="bg-background text-gray-800 h-screen overflow-hidden" x-data="{ currentPath: '/', isAuthenticated: false, mobileMenuOpen: false, userRole: 'user', username: '' }" @login-success.window="isAuthenticated = true; if($event.detail) { userRole = $event.detail.role; username = $event.detail.username; }">
+
+<body class="bg-background text-gray-800 h-screen overflow-hidden"
+    x-data="{ currentPath: '/', isAuthenticated: false, mobileMenuOpen: false, userRole: 'user', username: '' }"
+    @login-success.window="isAuthenticated = true; if($event.detail) { userRole = $event.detail.role; username = $event.detail.username; }"
+    @session-expired.window="isAuthenticated = false">
 
     <!-- Login View (Simple) -->
     <div x-show="!isAuthenticated" class="h-full flex items-center justify-center">
@@ -47,87 +54,143 @@
             <form @submit.prevent="login($data)" x-data="{ username: '', password: '', error: '' }">
                 <div class="mb-4">
                     <label class="block text-sm font-medium text-gray-700 mb-1">Username</label>
-                    <input type="text" x-model="username" class="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-secondary">
+                    <input type="text" x-model="username"
+                        class="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-secondary">
                 </div>
                 <div class="mb-6">
                     <label class="block text-sm font-medium text-gray-700 mb-1">Password</label>
-                    <input type="password" x-model="password" class="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-secondary">
+                    <input type="password" x-model="password"
+                        class="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-secondary">
                 </div>
                 <div x-show="error" class="text-red-500 text-sm mb-4" x-text="error"></div>
-                <button type="submit" class="w-full bg-secondary text-white font-medium rounded-lg py-2 hover:bg-opacity-90 transition">Login</button>
+                <button type="submit"
+                    class="w-full bg-secondary text-white font-medium rounded-lg py-2 hover:bg-opacity-90 transition">Login</button>
             </form>
         </div>
     </div>
 
     <!-- App View -->
     <div x-show="isAuthenticated" class="flex h-full w-full relative">
-        
+
         <!-- Mobile Header (Visible only on small screens) -->
-        <div class="md:hidden absolute top-0 left-0 right-0 h-16 bg-white border-b flex items-center justify-between px-4 z-20">
+        <div
+            class="md:hidden absolute top-0 left-0 right-0 h-16 bg-white border-b flex items-center justify-between px-4 z-20">
             <div class="flex items-center gap-2">
                 <div class="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center">
-                    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path></svg>
+                    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path>
+                    </svg>
                 </div>
                 <h1 class="font-bold">DocuNest</h1>
             </div>
             <button @click="mobileMenuOpen = !mobileMenuOpen" class="p-2 text-gray-600 focus:outline-none">
-                <svg x-show="!mobileMenuOpen" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
-                <svg x-show="mobileMenuOpen" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                <svg x-show="!mobileMenuOpen" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16">
+                    </path>
+                </svg>
+                <svg x-show="mobileMenuOpen" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
+                    </path>
+                </svg>
             </button>
         </div>
 
         <!-- Sidebar Background Overlay for Mobile -->
-        <div x-show="mobileMenuOpen" @click="mobileMenuOpen = false" class="fixed inset-0 bg-gray-900/50 z-30 md:hidden" style="display: none;"></div>
+        <div x-show="mobileMenuOpen" @click="mobileMenuOpen = false" class="fixed inset-0 bg-gray-900/50 z-30 md:hidden"
+            style="display: none;"></div>
 
         <!-- Sidebar -->
-        <aside :class="mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'" class="fixed md:static inset-y-0 left-0 z-40 w-64 bg-primary text-white flex flex-col justify-between transition-transform duration-300 md:translate-x-0">
+        <aside :class="mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'"
+            class="fixed md:static inset-y-0 left-0 z-40 w-64 bg-primary text-white flex flex-col justify-between transition-transform duration-300 md:translate-x-0">
             <div>
                 <div class="p-6 flex items-center gap-3 hidden md:flex">
                     <div class="w-10 h-10 rounded-xl bg-secondary flex items-center justify-center">
-                        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path></svg>
+                        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path>
+                        </svg>
                     </div>
                     <div>
                         <h1 class="font-bold text-lg leading-tight">DocuNest</h1>
                         <p class="text-xs text-gray-400">Smart. Local. Secure.</p>
                     </div>
                 </div>
-                
+
                 <nav class="px-4 mt-6 space-y-1">
-                    <a href="#" @click.prevent="currentPath = '/'" :class="currentPath === '/' ? 'bg-secondary text-white' : 'text-gray-300 hover:bg-white/10'" class="flex items-center gap-3 px-4 py-3 rounded-xl transition">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
+                    <a href="#" @click.prevent="currentPath = '/'; mobileMenuOpen = false"
+                        :class="currentPath === '/' ? 'bg-secondary text-white' : 'text-gray-300 hover:bg-white/10'"
+                        class="flex items-center gap-3 px-4 py-3 rounded-xl transition">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6">
+                            </path>
+                        </svg>
                         Dashboard
                     </a>
-                    <a href="#" @click.prevent="currentPath = '/upload'" :class="currentPath === '/upload' ? 'bg-secondary text-white' : 'text-gray-300 hover:bg-white/10'" class="flex items-center gap-3 px-4 py-3 rounded-xl transition">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                    <a href="#" @click.prevent="currentPath = '/upload'; mobileMenuOpen = false"
+                        :class="currentPath === '/upload' ? 'bg-secondary text-white' : 'text-gray-300 hover:bg-white/10'"
+                        class="flex items-center gap-3 px-4 py-3 rounded-xl transition">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
+                        </svg>
                         Upload Document
                     </a>
-                    <a href="#" @click.prevent="currentPath = '/customers'" :class="currentPath === '/customers' ? 'bg-secondary text-white' : 'text-gray-300 hover:bg-white/10'" class="flex items-center gap-3 px-4 py-3 rounded-xl transition">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                    <a href="#" @click.prevent="currentPath = '/customers'; mobileMenuOpen = false"
+                        :class="currentPath === '/customers' ? 'bg-secondary text-white' : 'text-gray-300 hover:bg-white/10'"
+                        class="flex items-center gap-3 px-4 py-3 rounded-xl transition">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z">
+                            </path>
+                        </svg>
                         Customers
                     </a>
-                    <a href="#" @click.prevent="currentPath = '/documents'; mobileMenuOpen = false" :class="currentPath === '/documents' ? 'bg-secondary text-white' : 'text-gray-300 hover:bg-white/10'" class="flex items-center gap-3 px-4 py-3 rounded-xl transition">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                    <a href="#" @click.prevent="currentPath = '/documents'; mobileMenuOpen = false"
+                        :class="currentPath === '/documents' ? 'bg-secondary text-white' : 'text-gray-300 hover:bg-white/10'"
+                        class="flex items-center gap-3 px-4 py-3 rounded-xl transition">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
+                            </path>
+                        </svg>
                         Documents
                     </a>
-                    <a x-show="userRole === 'admin'" href="#" @click.prevent="currentPath = '/admin'; mobileMenuOpen = false" :class="currentPath === '/admin' ? 'bg-secondary text-white' : 'text-gray-300 hover:bg-white/10'" class="flex items-center gap-3 px-4 py-3 rounded-xl transition">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    <a x-show="userRole === 'admin'" href="#"
+                        @click.prevent="currentPath = '/admin'; mobileMenuOpen = false"
+                        :class="currentPath === '/admin' ? 'bg-secondary text-white' : 'text-gray-300 hover:bg-white/10'"
+                        class="flex items-center gap-3 px-4 py-3 rounded-xl transition">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z">
+                            </path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                        </svg>
                         Admin Panel
                     </a>
                 </nav>
             </div>
-            
+
             <div class="p-4">
                 <div class="bg-white/10 p-4 rounded-xl flex items-center justify-between gap-3">
                     <div class="flex items-center gap-3">
-                        <div class="w-8 h-8 rounded-full bg-secondary flex items-center justify-center text-sm font-bold uppercase" x-text="username ? username.substring(0, 2) : 'U'">
+                        <div class="w-8 h-8 rounded-full bg-secondary flex items-center justify-center text-sm font-bold uppercase"
+                            x-text="username ? username.substring(0, 2) : 'U'">
                         </div>
                         <div>
                             <div class="text-sm font-medium capitalize" x-text="username || 'User'"></div>
                             <div class="text-xs text-gray-400 capitalize" x-text="userRole"></div>
                         </div>
                     </div>
-                    <button @click="logout()" title="Sign out" class="text-gray-400 hover:text-white transition p-1 rounded-lg hover:bg-white/10">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+                    <button @click="logout()" title="Sign out"
+                        class="text-gray-400 hover:text-white transition p-1 rounded-lg hover:bg-white/10">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1">
+                            </path>
+                        </svg>
                     </button>
                 </div>
             </div>
@@ -137,138 +200,168 @@
         <main class="flex-1 overflow-y-auto p-4 md:p-8 pt-20 md:pt-8 relative">
             <header class="flex justify-between items-center mb-8">
                 <div>
-                    <h2 class="text-2xl font-bold" x-text="currentPath === '/' ? 'Welcome back' : (currentPath === '/upload' ? 'Upload Document' : (currentPath === '/admin' ? 'Admin Panel' : ''))"></h2>
-                    <p class="text-gray-500 text-sm" x-show="currentPath === '/'">Here's what's happening with your documents today.</p>
+                    <h2 class="text-2xl font-bold"
+                        x-text="currentPath === '/' ? 'Welcome back' : (currentPath === '/upload' ? 'Upload Document' : (currentPath === '/admin' ? 'Admin Panel' : ''))">
+                    </h2>
+                    <p class="text-gray-500 text-sm" x-show="currentPath === '/'">Here's what's happening with your
+                        documents today.</p>
                 </div>
                 <div class="flex items-center gap-4">
-                    <button class="w-10 h-10 rounded-full bg-white shadow flex items-center justify-center text-gray-600 hover:bg-gray-50">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
+                    <button
+                        class="w-10 h-10 rounded-full bg-white shadow flex items-center justify-center text-gray-600 hover:bg-gray-50">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9">
+                            </path>
+                        </svg>
                     </button>
-                    <div class="w-10 h-10 rounded-full bg-secondary text-white flex items-center justify-center font-bold uppercase" x-text="username ? username.substring(0, 2) : 'U'">
+                    <div class="w-10 h-10 rounded-full bg-secondary text-white flex items-center justify-center font-bold uppercase"
+                        x-text="username ? username.substring(0, 2) : 'U'">
                     </div>
                 </div>
             </header>
 
             <!-- Dashboard Content -->
-            <div x-show="currentPath === '/'" class="space-y-6" x-data="dashboardView()" x-init="loadStats()">
-                <!-- Stats Row -->
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-4">
-                        <div class="w-12 h-12 rounded-xl bg-purple-100 text-purple-600 flex items-center justify-center">
-                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                        </div>
-                        <div>
-                            <div class="text-2xl font-bold" x-text="stats.total_documents"></div>
-                            <div class="text-sm text-gray-500">Total Documents</div>
-                        </div>
+<div x-show="currentPath === '/'" class="space-y-6" x-data="dashboardView()" x-init="initView()">
+    <!-- Stats Row -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-4">
+            <div class="w-12 h-12 rounded-xl bg-purple-100 text-purple-600 flex items-center justify-center">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
+                    </path>
+                </svg>
+            </div>
+            <div>
+                <div class="text-2xl font-bold" x-text="stats.total_documents"></div>
+                <div class="text-sm text-gray-500">Total Documents</div>
+            </div>
+        </div>
+        <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-4">
+            <div class="w-12 h-12 rounded-xl bg-green-100 text-green-600 flex items-center justify-center">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z">
+                    </path>
+                </svg>
+            </div>
+            <div>
+                <div class="text-2xl font-bold" x-text="stats.total_customers"></div>
+                <div class="text-sm text-gray-500">Customers</div>
+            </div>
+        </div>
+        <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-4">
+            <div class="w-12 h-12 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+            </div>
+            <div>
+                <div class="text-2xl font-bold" x-text="stats.processed_today"></div>
+                <div class="text-sm text-gray-500">Processed Today</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Admin: Danger Zone -->
+    <div x-show="userRole === 'admin'" class="bg-white rounded-2xl shadow-sm border border-red-100 p-6 mt-8">
+        <div class="flex flex-col md:flex-row items-start justify-between gap-4">
+            <div>
+                <div class="flex items-center gap-2 mb-1">
+                    <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z">
+                        </path>
+                    </svg>
+                    <h4 class="font-bold text-red-700">Danger Zone</h4>
+                </div>
+                <p class="text-sm text-gray-600 max-w-lg">Permanently delete all customers, documents, and uploaded
+                    files from the entire system. This action cannot be undone and there is no recovery option.</p>
+            </div>
+            <button @click="wipeModalOpen = true"
+                class="flex-shrink-0 w-full md:w-auto md:ml-6 bg-red-600 text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-red-700 transition focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
+                Wipe All Data
+            </button>
+        </div>
+    </div>
+
+    <!-- Wipe Confirmation Modal -->
+    <div x-show="wipeModalOpen" style="display:none;" class="fixed inset-0 z-50 overflow-y-auto" role="dialog"
+        aria-modal="true" aria-labelledby="wipe-modal-title">
+        <div class="flex items-center justify-center min-h-screen px-4">
+            <div class="fixed inset-0 bg-gray-900 bg-opacity-75" @click="closeWipeModal()"></div>
+            <div class="relative bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 z-10">
+                <!-- Header -->
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                        <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z">
+                            </path>
+                        </svg>
                     </div>
-                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-4">
-                        <div class="w-12 h-12 rounded-xl bg-green-100 text-green-600 flex items-center justify-center">
-                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
-                        </div>
-                        <div>
-                            <div class="text-2xl font-bold" x-text="stats.total_customers"></div>
-                            <div class="text-sm text-gray-500">Customers</div>
-                        </div>
-                    </div>
-                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-4">
-                        <div class="w-12 h-12 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center">
-                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        </div>
-                        <div>
-                            <div class="text-2xl font-bold" x-text="stats.processed_today"></div>
-                            <div class="text-sm text-gray-500">Processed Today</div>
-                        </div>
+                    <div>
+                        <h3 class="text-lg font-bold text-gray-900" id="wipe-modal-title">This action is permanent</h3>
+                        <p class="text-sm text-gray-500">There is no undo, no backup, no recovery.</p>
                     </div>
                 </div>
 
-                <!-- Admin: Danger Zone -->
-                <div x-show="userRole === 'admin'" class="bg-white rounded-2xl shadow-sm border border-red-100 p-6 mt-8">
-                    <div class="flex flex-col md:flex-row items-start justify-between gap-4">
-                        <div>
-                            <div class="flex items-center gap-2 mb-1">
-                                <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-                                <h4 class="font-bold text-red-700">Danger Zone</h4>
-                            </div>
-                            <p class="text-sm text-gray-600 max-w-lg">Permanently delete all customers, documents, and uploaded files from the entire system. This action cannot be undone and there is no recovery option.</p>
-                        </div>
-                        <button @click="wipeModalOpen = true" class="flex-shrink-0 w-full md:w-auto md:ml-6 bg-red-600 text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-red-700 transition focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
-                            Wipe All Data
-                        </button>
-                    </div>
+                <!-- Warning detail -->
+                <div class="bg-red-50 border border-red-200 rounded-lg p-4 mb-5 text-sm text-red-800 space-y-1">
+                    <p class="font-semibold">The following will be permanently deleted:</p>
+                    <ul class="list-disc list-inside space-y-0.5 text-red-700">
+                        <li>All customer records</li>
+                        <li>All uploaded documents and files on disk</li>
+                        <li>All audit logs</li>
+                    </ul>
                 </div>
 
-                <!-- Wipe Confirmation Modal -->
-                <div x-show="wipeModalOpen" style="display:none;" class="fixed inset-0 z-50 overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby="wipe-modal-title">
-                    <div class="flex items-center justify-center min-h-screen px-4">
-                        <div class="fixed inset-0 bg-gray-900 bg-opacity-75" @click="closeWipeModal()"></div>
-                        <div class="relative bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 z-10">
-                            <!-- Header -->
-                            <div class="flex items-center gap-3 mb-4">
-                                <div class="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
-                                    <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-                                </div>
-                                <div>
-                                    <h3 class="text-lg font-bold text-gray-900" id="wipe-modal-title">This action is permanent</h3>
-                                    <p class="text-sm text-gray-500">There is no undo, no backup, no recovery.</p>
-                                </div>
-                            </div>
+                <!-- Confirmation input -->
+                <p class="text-sm text-gray-700 mb-2">To confirm, type exactly: <code
+                        class="bg-gray-100 px-1.5 py-0.5 rounded font-mono text-red-700 font-semibold">wipe my data</code>
+                </p>
+                <input type="text" x-model="wipeConfirmInput" @keyup.enter="submitWipe()" placeholder="wipe my data"
+                    autocomplete="off"
+                    class="w-full border-2 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none transition"
+                    :class="wipeConfirmInput === 'wipe my data' ? 'border-red-500 bg-red-50' : 'border-gray-300'">
+                <div x-show="wipeError" class="text-red-600 text-xs mt-1" x-text="wipeError"></div>
 
-                            <!-- Warning detail -->
-                            <div class="bg-red-50 border border-red-200 rounded-lg p-4 mb-5 text-sm text-red-800 space-y-1">
-                                <p class="font-semibold">The following will be permanently deleted:</p>
-                                <ul class="list-disc list-inside space-y-0.5 text-red-700">
-                                    <li>All customer records</li>
-                                    <li>All uploaded documents and files on disk</li>
-                                    <li>All audit logs</li>
-                                </ul>
-                            </div>
-
-                            <!-- Confirmation input -->
-                            <p class="text-sm text-gray-700 mb-2">To confirm, type exactly: <code class="bg-gray-100 px-1.5 py-0.5 rounded font-mono text-red-700 font-semibold">wipe my data</code></p>
-                            <input
-                                type="text"
-                                x-model="wipeConfirmInput"
-                                @keyup.enter="submitWipe()"
-                                placeholder="wipe my data"
-                                autocomplete="off"
-                                class="w-full border-2 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none transition"
-                                :class="wipeConfirmInput === 'wipe my data' ? 'border-red-500 bg-red-50' : 'border-gray-300'"
-                            >
-                            <div x-show="wipeError" class="text-red-600 text-xs mt-1" x-text="wipeError"></div>
-
-                            <!-- Actions -->
-                            <div class="flex gap-3 mt-5 justify-end">
-                                <button @click="closeWipeModal()" type="button" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition">
-                                    Cancel
-                                </button>
-                                <button
-                                    @click="submitWipe()"
-                                    type="button"
-                                    :disabled="wipeConfirmInput !== 'wipe my data' || wiping"
-                                    class="px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700 transition disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-red-500"
-                                >
-                                    <span x-show="!wiping">Permanently Delete Everything</span>
-                                    <span x-show="wiping" class="flex items-center gap-2">
-                                        <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
-                                        Wiping...
-                                    </span>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
+                <!-- Actions -->
+                <div class="flex gap-3 mt-5 justify-end">
+                    <button @click="closeWipeModal()" type="button"
+                        class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition">
+                        Cancel
+                    </button>
+                    <button @click="submitWipe()" type="button"
+                        :disabled="wipeConfirmInput !== 'wipe my data' || wiping"
+                        class="px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700 transition disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-red-500">
+                        <span x-show="!wiping">Permanently Delete Everything</span>
+                        <span x-show="wiping" class="flex items-center gap-2">
+                            <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor"
+                                    stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor"
+                                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                            </svg>
+                            Wiping...
+                        </span>
+                    </button>
                 </div>
             </div>
-
+        </div>
+    </div>
+</div>
             <!-- Upload Content -->
             <div x-show="currentPath === '/upload'" 
                  x-data="uploadForm()"
-                 class="bg-white rounded-3xl shadow-sm border border-gray-100 p-8">
+                 class="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
                 <div class="text-sm text-secondary font-medium mb-2">STEP 1 OF 2</div>
                 <h3 class="text-2xl font-bold mb-2">Upload a Document</h3>
                 <p class="text-gray-500 mb-8">We'll automatically read, classify and organize it for the right person.</p>
                 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                         <div class="mb-4 font-medium">Who is this document for?</div>
                         <div class="grid grid-cols-2 gap-4">
@@ -322,9 +415,9 @@
                         </div>
                     </div>
                     
-                    <div class="border-2 border-dashed border-gray-200 rounded-2xl bg-gray-50 flex flex-col items-center justify-center p-8 relative hover:bg-gray-100 transition" @dragover.prevent @drop.prevent="handleDrop">
+                    <div class="border-2 border-dashed border-gray-200 rounded-xl bg-gray-50 flex flex-col items-center justify-center p-6 relative hover:bg-gray-100 transition" @dragover.prevent @drop.prevent="handleDrop">
                         <input type="file" x-ref="fileInput" @change="handleFileSelect" class="hidden" accept=".pdf,.jpg,.jpeg,.png">
-                        <div class="w-24 h-24 bg-purple-100 rounded-2xl mb-4 flex items-center justify-center">
+                        <div class="w-24 h-24 bg-purple-100 rounded-xl mb-4 flex items-center justify-center">
                             <svg class="w-12 h-12 text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
                         </div>
                         <div class="font-bold text-lg mb-1" x-text="file ? file.name : 'Drag & drop your file here'"></div>
@@ -351,370 +444,468 @@
                     </div>
                 </div>
             </div>
-            
             <!-- Documents Content -->
-            <div x-show="currentPath === '/documents'" x-data="documentsView()" x-init="initView()" class="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
-                <div class="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-                    <h3 class="text-xl font-bold">Recent Documents</h3>
-                    <button @click="fetch('/api/documents').then(r => r.json()).then(d => documents = d)" class="text-sm text-secondary hover:text-indigo-800 font-medium flex items-center gap-1">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                        Refresh
-                    </button>
-                </div>
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left text-sm">
-                        <thead class="bg-gray-50 text-gray-500 font-medium">
-                            <tr>
-                                <th class="px-6 py-4">Document</th>
-                                <th class="px-6 py-4">Status</th>
-                                <th class="px-6 py-4">Type</th>
-                                <th class="px-6 py-4">Person</th>
-                                <th class="px-6 py-4">Customer</th>
-                                <th class="px-6 py-4">Date</th>
-                                <th class="px-6 py-4 text-right">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-gray-100">
-                            <template x-for="doc in documents" :key="doc.id">
-                                <tr class="hover:bg-gray-50 transition">
-                                    <td class="px-6 py-4">
-                                        <div class="font-medium text-gray-900" x-text="doc.original_name"></div>
-                                        <div class="text-xs text-gray-500" x-text="'ID: ' + doc.id"></div>
-                                    </td>
-                                    <td class="px-6 py-4">
-                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize"
-                                              :class="{
+<div x-show="currentPath === '/documents'" x-data="documentsView()" x-init="initView()"
+    class="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+    <div class="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+        <h3 class="text-xl font-bold">Recent Documents</h3>
+        <button @click="fetch('/api/documents').then(r => r.json()).then(d => documents = d)"
+            class="text-sm text-secondary hover:text-indigo-800 font-medium flex items-center gap-1">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15">
+                </path>
+            </svg>
+            Refresh
+        </button>
+    </div>
+    <div class="overflow-x-auto">
+        <table class="w-full text-left text-sm">
+            <thead class="bg-gray-50 text-gray-500 font-medium">
+                <tr>
+                    <th class="px-6 py-4 whitespace-nowrap">Document</th>
+                    <th class="px-6 py-4 whitespace-nowrap">Status</th>
+                    <th class="px-6 py-4 whitespace-nowrap">Type</th>
+                    <th class="px-6 py-4 whitespace-nowrap">Person</th>
+                    <th class="px-6 py-4 whitespace-nowrap">Customer</th>
+                    <th class="px-6 py-4 whitespace-nowrap">Date</th>
+                    <th class="px-6 py-4 text-right whitespace-nowrap">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                <template x-for="doc in documents" :key="doc.id">
+                    <tr class="hover:bg-gray-50 transition">
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="font-medium text-gray-900" x-text="doc.original_name"></div>
+                            <div class="text-xs text-gray-500" x-text="'ID: ' + doc.id"></div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <span
+                                class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize"
+                                :class="{
                                                   'bg-blue-100 text-blue-800': doc.status === 'uploaded',
                                                   'bg-yellow-100 text-yellow-800': doc.status === 'processing',
                                                   'bg-orange-100 text-orange-800': doc.status === 'needs_review',
                                                   'bg-green-100 text-green-800': doc.status === 'completed',
                                                   'bg-red-100 text-red-800': doc.status === 'failed'
                                               }" x-text="doc.status.replace('_', ' ')">
-                                        </span>
-                                    </td>
-                                    <td class="px-6 py-4 text-gray-500" x-text="doc.document_type || '-'"></td>
-                                    <td class="px-6 py-4 text-gray-500" x-text="doc.person_name || '-'"></td>
-                                    <td class="px-6 py-4 text-gray-900 font-medium" x-text="doc.customer_name || (doc.status === 'needs_review' ? 'Pending Review' : 'New')"></td>
-                                    <td class="px-6 py-4 text-gray-500" x-text="new Date(doc.created_at).toLocaleDateString()"></td>
-                                    <td class="px-6 py-4 text-right flex justify-end gap-2">
-                                        <button x-show="doc.status === 'needs_review'" @click="openReviewModal(doc)" class="text-sm bg-orange-100 text-orange-700 px-3 py-1.5 rounded-lg hover:bg-orange-200 font-medium transition">Review</button>
-                                    </td>
-                                </tr>
-                            </template>
-                            <tr x-show="documents == null || documents.length === 0">
-                                <td colspan="6" class="px-6 py-8 text-center text-gray-500">No documents found.</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 text-gray-500 whitespace-nowrap" x-text="doc.document_type || '-'"></td>
+                        <td class="px-6 py-4 text-gray-500 whitespace-nowrap" x-text="doc.person_name || '-'"></td>
+                        <td class="px-6 py-4 text-gray-900 font-medium whitespace-nowrap"
+                            x-text="doc.customer_name || (doc.status === 'needs_review' ? 'Pending Review' : 'New')">
+                        </td>
+                        <td class="px-6 py-4 text-gray-500 whitespace-nowrap" x-text="new Date(doc.created_at).toLocaleDateString()"></td>
+                        <td class="px-6 py-4 text-right flex justify-end gap-2 whitespace-nowrap">
+                            <button x-show="doc.status === 'needs_review'" @click="openReviewModal(doc)"
+                                class="text-sm bg-orange-100 text-orange-700 px-3 py-1.5 rounded-lg hover:bg-orange-200 font-medium transition">Review</button>
+                        </td>
+                    </tr>
+                </template>
+                <tr x-show="documents == null || documents.length === 0">
+                    <td colspan="6" class="px-6 py-8 text-center text-gray-500">No documents found.</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
 
-                <!-- Review Modal -->
-                <div x-show="reviewModalOpen" style="display: none;" class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
-                    <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-                        <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @click="reviewModalOpen = false"></div>
-                        <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
-                        <div class="inline-block align-bottom bg-white rounded-xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
-                            <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                                <h3 class="text-lg leading-6 font-bold text-gray-900" id="modal-title">Review AI Extraction</h3>
-                                <div class="mt-2">
-                                    <p class="text-sm text-gray-500 mb-6">Please verify the AI's classification before completing.</p>
-                                    
-                                    <div class="space-y-4 text-left">
-                                        <div>
-                                            <label class="block text-sm font-medium text-gray-700">Document Type</label>
-                                            <input type="text" x-model="reviewDoc.document_type" class="mt-1 w-full border rounded-lg px-3 py-2">
-                                        </div>
-                                        <div>
-                                            <label class="block text-sm font-medium text-gray-700">Person Name</label>
-                                            <input type="text" x-model="reviewDoc.person_name" class="mt-1 w-full border rounded-lg px-3 py-2">
-                                        </div>
-                                        <div>
-                                            <label class="block text-sm font-medium text-gray-700">Date of Birth</label>
-                                            <input type="text" x-model="reviewDoc.dob" class="mt-1 w-full border rounded-lg px-3 py-2" placeholder="DD/MM/YYYY">
-                                        </div>
-                                        <div>
-                                            <label class="block text-sm font-medium text-gray-700">Document ID Number</label>
-                                            <input type="text" x-model="reviewDoc.document_id_number" class="mt-1 w-full border rounded-lg px-3 py-2">
-                                        </div>
-                                        
-                                        <div class="pt-2">
-                                            <label class="block text-sm font-medium text-gray-700 mb-2">Customer Assignment</label>
-                                            <div class="grid grid-cols-2 gap-2 mb-2">
-                                                <button type="button" @click="reviewCustomerType = 'new'; reviewSearchQuery = ''; reviewSelectedCustomer = null" :class="reviewCustomerType === 'new' ? 'bg-secondary text-white' : 'bg-gray-100 text-gray-700'" class="px-3 py-2 rounded-lg text-sm font-medium">Create New</button>
-                                                <button type="button" @click="reviewCustomerType = 'existing'" :class="reviewCustomerType === 'existing' ? 'bg-secondary text-white' : 'bg-gray-100 text-gray-700'" class="px-3 py-2 rounded-lg text-sm font-medium">Link Existing</button>
+    <!-- Review Modal -->
+    <div x-show="reviewModalOpen" style="display: none;" class="fixed inset-0 z-50 overflow-y-auto"
+        aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @click="reviewModalOpen = false">
+            </div>
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+            <div
+                class="inline-block align-bottom bg-white rounded-xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+                <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                    <h3 class="text-lg leading-6 font-bold text-gray-900" id="modal-title">Review AI Extraction</h3>
+                    <div class="mt-2">
+                        <p class="text-sm text-gray-500 mb-6">Please verify the AI's classification before completing.
+                        </p>
+
+                        <div class="space-y-4 text-left">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Document Type</label>
+                                <input type="text" x-model="reviewDoc.document_type"
+                                    class="mt-1 w-full border rounded-lg px-3 py-2">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Person Name</label>
+                                <input type="text" x-model="reviewDoc.person_name"
+                                    class="mt-1 w-full border rounded-lg px-3 py-2">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Date of Birth</label>
+                                <input type="text" x-model="reviewDoc.dob"
+                                    class="mt-1 w-full border rounded-lg px-3 py-2" placeholder="DD/MM/YYYY">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Document ID Number</label>
+                                <input type="text" x-model="reviewDoc.document_id_number"
+                                    class="mt-1 w-full border rounded-lg px-3 py-2">
+                            </div>
+
+                            <div class="pt-2">
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Customer Assignment</label>
+                                <div class="grid grid-cols-2 gap-2 mb-2">
+                                    <button type="button"
+                                        @click="reviewCustomerType = 'new'; reviewSearchQuery = ''; reviewSelectedCustomer = null"
+                                        :class="reviewCustomerType === 'new' ? 'bg-secondary text-white' : 'bg-gray-100 text-gray-700'"
+                                        class="px-3 py-2 rounded-lg text-sm font-medium">Create New</button>
+                                    <button type="button" @click="reviewCustomerType = 'existing'"
+                                        :class="reviewCustomerType === 'existing' ? 'bg-secondary text-white' : 'bg-gray-100 text-gray-700'"
+                                        class="px-3 py-2 rounded-lg text-sm font-medium">Link Existing</button>
+                                </div>
+
+                                <div x-show="reviewCustomerType === 'existing'" class="relative">
+                                    <input type="text" x-model="reviewSearchQuery"
+                                        @input.debounce.300ms="searchReviewCustomers" placeholder="Search customers..."
+                                        class="w-full border rounded-lg px-3 py-2">
+
+                                    <div x-show="reviewCustomers.length > 0 && reviewSearchQuery.length > 0"
+                                        class="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-40 overflow-y-auto">
+                                        <template x-for="c in reviewCustomers" :key="c.id">
+                                            <div @click="selectReviewCustomer(c)"
+                                                class="px-4 py-2 hover:bg-gray-50 cursor-pointer border-b last:border-0 text-sm">
+                                                <div class="font-medium" x-text="c.name"></div>
                                             </div>
-                                            
-                                            <div x-show="reviewCustomerType === 'existing'" class="relative">
-                                                <input type="text" x-model="reviewSearchQuery" @input.debounce.300ms="searchReviewCustomers" placeholder="Search customers..." class="w-full border rounded-lg px-3 py-2">
-                                                
-                                                <div x-show="reviewCustomers.length > 0 && reviewSearchQuery.length > 0" class="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-40 overflow-y-auto">
-                                                    <template x-for="c in reviewCustomers" :key="c.id">
-                                                        <div @click="selectReviewCustomer(c)" class="px-4 py-2 hover:bg-gray-50 cursor-pointer border-b last:border-0 text-sm">
-                                                            <div class="font-medium" x-text="c.name"></div>
-                                                        </div>
-                                                    </template>
-                                                </div>
-                                                
-                                                <div x-show="reviewSelectedCustomer" class="mt-2 text-sm text-green-700 flex items-center justify-between bg-green-50 px-3 py-2 rounded">
-                                                    <span x-text="'Linked to: ' + reviewSelectedCustomer?.name"></span>
-                                                    <button @click="reviewSelectedCustomer = null; reviewSearchQuery = ''" class="font-bold text-green-800">×</button>
-                                                </div>
-                                            </div>
-                                        </div>
+                                        </template>
+                                    </div>
+
+                                    <div x-show="reviewSelectedCustomer"
+                                        class="mt-2 text-sm text-green-700 flex items-center justify-between bg-green-50 px-3 py-2 rounded">
+                                        <span x-text="'Linked to: ' + reviewSelectedCustomer?.name"></span>
+                                        <button @click="reviewSelectedCustomer = null; reviewSearchQuery = ''"
+                                            class="font-bold text-green-800">×</button>
                                     </div>
                                 </div>
                             </div>
-                            <div class="bg-gray-50 px-4 py-3 sm:px-6 flex justify-end gap-3">
-                                <button type="button" @click="reviewModalOpen = false" class="inline-flex justify-center rounded-lg border border-gray-300 shadow-sm px-4 py-2 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50">
-                                    Cancel
-                                </button>
-                                <button type="button" @click="submitReview" :disabled="submittingReview || (reviewCustomerType === 'existing' && !reviewSelectedCustomer)" class="inline-flex justify-center rounded-lg border border-transparent shadow-sm px-4 py-2 bg-secondary text-sm font-medium text-white hover:bg-opacity-90 disabled:opacity-50">
-                                    <span x-show="!submittingReview">Confirm & Save</span>
-                                    <span x-show="submittingReview">Saving...</span>
-                                </button>
-                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
-
-            <!-- Customers Content -->
-            <div x-show="currentPath === '/customers'" x-data="customersView()" x-init="initView()" class="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
-                <div class="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-                    <h3 class="text-xl font-bold">All Customers</h3>
-                    <button @click="fetchCustomers()" class="text-sm text-secondary hover:text-indigo-800 font-medium flex items-center gap-1">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                        Refresh
+                <div class="bg-gray-50 px-4 py-3 sm:px-6 flex justify-end gap-3">
+                    <button type="button" @click="reviewModalOpen = false"
+                        class="inline-flex justify-center rounded-lg border border-gray-300 shadow-sm px-4 py-2 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50">
+                        Cancel
+                    </button>
+                    <button type="button" @click="submitReview"
+                        :disabled="submittingReview || (reviewCustomerType === 'existing' && !reviewSelectedCustomer)"
+                        class="inline-flex justify-center rounded-lg border border-transparent shadow-sm px-4 py-2 bg-secondary text-sm font-medium text-white hover:bg-opacity-90 disabled:opacity-50">
+                        <span x-show="!submittingReview">Confirm & Save</span>
+                        <span x-show="submittingReview">Saving...</span>
                     </button>
                 </div>
-                <div class="overflow-x-auto">
+            </div>
+        </div>
+    </div>
+</div>
+            <!-- Customers Content -->
+<div x-show="currentPath === '/customers'" x-data="customersView()" x-init="initView()"
+    class="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+    <div class="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+        <h3 class="text-xl font-bold">All Customers</h3>
+        <button @click="fetchCustomers()"
+            class="text-sm text-secondary hover:text-indigo-800 font-medium flex items-center gap-1">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15">
+                </path>
+            </svg>
+            Refresh
+        </button>
+    </div>
+    <div class="overflow-x-auto">
+        <table class="w-full text-left text-sm">
+            <thead class="bg-gray-50 text-gray-500 font-medium">
+                <tr>
+                    <th class="px-6 py-4 whitespace-nowrap">ID</th>
+                    <th class="px-6 py-4 whitespace-nowrap">Name</th>
+                    <th class="px-6 py-4 whitespace-nowrap">Created Time</th>
+                    <th class="px-6 py-4 whitespace-nowrap">Created Date</th>
+                </tr>
+            </thead>
+            <template x-for="c in customers" :key="c.id">
+                <tbody class="border-b border-gray-100" x-data="{ docs: [], loading: false, loaded: false }">
+                    <tr class="hover:bg-gray-50 transition cursor-pointer"
+                        @click="if(expandedCustomer === c.id) { expandedCustomer = null } else { expandedCustomer = c.id; if(!loaded) { loading = true; fetch(`/api/customers/${c.id}/documents`).then(r=>r.json()).then(d=>{docs=d||[]; loaded=true; loading=false;}) } }">
+                        <td class="px-6 py-4 text-xs text-gray-500 font-mono whitespace-nowrap" x-text="c.id"></td>
+                        <td class="px-6 py-4 font-medium text-gray-900 flex items-center gap-2 whitespace-nowrap">
+                            <svg :class="expandedCustomer === c.id ? 'rotate-90 text-secondary' : 'text-gray-400'"
+                                class="w-4 h-4 transition-transform" fill="none" stroke="currentColor"
+                                viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7">
+                                </path>
+                            </svg>
+                            <span x-text="c.name"></span>
+                        </td>
+                        <td class="px-6 py-4 text-gray-500 whitespace-nowrap" x-text="new Date(c.created_at).toLocaleTimeString()"></td>
+                        <td class="px-6 py-4 text-gray-500 whitespace-nowrap" x-text="new Date(c.created_at).toLocaleDateString()"></td>
+                    </tr>
+                    <tr x-show="expandedCustomer === c.id" x-transition>
+                        <td colspan="4" class="px-6 py-4 bg-gray-50 border-t-0">
+                            <div x-show="loading" class="text-sm text-gray-500 flex items-center gap-2">
+                                <svg class="animate-spin h-4 w-4 text-secondary" xmlns="http://www.w3.org/2000/svg"
+                                    fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor"
+                                        stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor"
+                                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+                                    </path>
+                                </svg>
+                                Loading documents...
+                            </div>
+                            <div x-show="!loading && docs.length === 0" class="text-sm text-gray-500 pl-6">No documents
+                                found.</div>
+                            <div x-show="!loading && docs.length > 0"
+                                class="space-y-2 pl-6 border-l-2 border-gray-200 ml-2">
+                                <template x-for="doc in docs" :key="doc.id">
+                                    <div
+                                        class="flex flex-col mb-2 p-3 bg-white rounded-lg border border-gray-100 shadow-sm hover:border-gray-200 transition">
+                                        <div class="flex items-center justify-between">
+                                            <div class="flex flex-col">
+                                                <span class="font-medium text-sm text-gray-900"
+                                                    x-text="doc.original_name"></span>
+                                                <span class="text-xs text-gray-500 capitalize"
+                                                    x-text="(doc.document_type || 'Unknown') + ' • ' + (doc.status.replace('_', ' '))"></span>
+                                            </div>
+                                            <div class="flex gap-2 items-center">
+                                                <button @click.stop="doc.showOcr = !doc.showOcr"
+                                                    class="text-xs font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 px-3 py-1.5 rounded-md border border-purple-100 transition">OCR</button>
+                                                <button @click.stop="openShareModal(doc)"
+                                                    class="text-xs border border-gray-200 text-gray-700 px-3 py-1.5 rounded-md hover:bg-gray-50 font-medium transition">Share</button>
+                                                <button @click.stop="previewDocument(doc)"
+                                                    class="text-xs font-medium text-secondary hover:text-indigo-800 bg-indigo-50 px-3 py-1.5 rounded-md border border-indigo-100 transition">Preview</button>
+                                            </div>
+                                        </div>
+                                        <div x-show="doc.showOcr"
+                                            class="mt-3 p-3 bg-gray-50 rounded border border-gray-200" x-transition>
+                                            <div class="flex justify-between items-center mb-2">
+                                                <h5 class="text-xs font-bold text-gray-700">Extracted OCR Text</h5>
+                                                <button
+                                                    @click.stop="navigator.clipboard.writeText(doc.ocr_text); alert('Text copied to clipboard!')"
+                                                    class="text-xs bg-white border border-gray-300 text-gray-600 px-2 py-1 rounded hover:bg-gray-100 transition">Copy</button>
+                                            </div>
+                                            <pre class="text-xs text-gray-600 whitespace-pre-wrap font-mono"
+                                                x-text="doc.ocr_text || 'No text extracted.'"></pre>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </template>
+            <tbody x-show="customers == null || customers.length === 0">
+                <tr>
+                    <td colspan="3" class="px-6 py-8 text-center text-gray-500">No customers found.</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Document Preview Modal -->
+    <div x-show="previewModalOpen" style="display: none;" class="fixed inset-0 z-50 overflow-y-auto"
+        aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 bg-gray-900 bg-opacity-75 transition-opacity" @click="previewModalOpen = false">
+            </div>
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+            <div class="inline-block align-bottom bg-white rounded-xl text-left overflow-hidden shadow-2xl transform transition-all sm:my-8 sm:align-middle w-full max-w-4xl"
+                style="height: 80vh;">
+                <div class="bg-gray-50 px-4 py-3 border-b border-gray-200 flex justify-between items-center">
+                    <h3 class="text-lg leading-6 font-bold text-gray-900 flex flex-col">
+                        <span x-text="previewDoc?.original_name"></span>
+                        <span class="text-xs text-gray-500 font-normal"
+                            x-text="previewDoc?.document_type || 'Unknown Document'"></span>
+                    </h3>
+                    <div class="flex items-center gap-2">
+                        <button x-show="previewDoc?.ocr_text"
+                            @click="navigator.clipboard.writeText(previewDoc.ocr_text); alert('Text copied to clipboard!')"
+                            class="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1 rounded border font-medium transition">
+                            Copy Text
+                        </button>
+                        <button type="button" @click="previewModalOpen = false"
+                            class="text-gray-400 hover:text-gray-500 bg-white border border-gray-200 rounded-lg p-2 hover:bg-gray-50 transition">
+                            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="h-full pb-16 flex flex-col md:flex-row overflow-y-auto md:overflow-y-hidden">
+                    <div class="flex-none md:flex-1 h-[50vh] md:h-full border-b md:border-b-0 md:border-r border-gray-200">
+                        <template x-if="previewUrl">
+                            <iframe :src="previewUrl" class="w-full h-full border-0 bg-gray-100"></iframe>
+                        </template>
+                    </div>
+                    <div class="w-full md:w-1/3 p-4 bg-white" x-show="previewDoc?.ocr_text">
+                        <h4 class="font-bold text-gray-700 mb-2 border-b pb-2">Extracted Text</h4>
+                        <pre class="text-sm text-gray-600 whitespace-pre-wrap font-mono"
+                            x-text="previewDoc?.ocr_text"></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Share Modal -->
+    <div x-show="shareModalOpen" style="display: none;" class="fixed inset-0 z-50 overflow-y-auto"
+        aria-labelledby="share-title" role="dialog" aria-modal="true">
+        <div class="flex items-center justify-center min-h-screen px-4">
+            <div class="fixed inset-0 bg-gray-900 bg-opacity-75 transition-opacity" @click="shareModalOpen = false">
+            </div>
+            <div class="relative bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+                <h3 class="text-lg font-bold mb-4" id="share-title">Share Document</h3>
+
+                <div x-show="!shareLink">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Expiration</label>
+                    <select x-model="shareDuration" class="w-full border rounded-lg px-3 py-2 mb-4">
+                        <option value="1">1 Hour</option>
+                        <option value="24">24 Hours</option>
+                        <option value="72">3 Days</option>
+                    </select>
+
+                    <label class="flex items-center gap-2 mb-6 cursor-pointer">
+                        <input type="checkbox" x-model="shareSingleUse"
+                            class="rounded text-secondary focus:ring-secondary">
+                        <span class="text-sm text-gray-700">Single use only</span>
+                    </label>
+
+                    <div class="flex justify-end gap-3">
+                        <button @click="shareModalOpen = false"
+                            class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">Cancel</button>
+                        <button @click="generateShareLink()"
+                            class="px-4 py-2 bg-secondary text-white rounded-lg text-sm font-medium hover:bg-opacity-90">Generate
+                            Link</button>
+                    </div>
+                </div>
+
+                <div x-show="shareLink">
+                    <p class="text-sm text-green-600 mb-4 font-medium">Link generated successfully!</p>
+                    <div class="flex items-center gap-2 mb-6">
+                        <input type="text" readonly :value="shareLink"
+                            class="w-full border rounded-lg px-3 py-2 text-sm bg-gray-50 focus:outline-none">
+                        <button @click="navigator.clipboard.writeText(shareLink); alert('Link copied to clipboard!')"
+                            class="px-3 py-2 bg-gray-100 border rounded-lg hover:bg-gray-200">Copy</button>
+                    </div>
+                    <div class="flex justify-end">
+                        <button @click="shareModalOpen = false; shareLink = ''"
+                            class="px-4 py-2 bg-secondary text-white rounded-lg text-sm font-medium hover:bg-opacity-90">Done</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+            <!-- Admin Panel -->
+<div x-show="currentPath === '/admin'" class="space-y-8" style="display: none;">
+
+    <!-- Live Activity -->
+    <div x-data="activityView()" x-init="initView()" class="mt-12">
+        <header class="mb-8 flex justify-between items-center">
+            <h2 class="text-2xl font-bold flex items-center gap-2">
+                Live Activity
+                <span class="relative flex h-3 w-3">
+                    <span
+                        class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                </span>
+            </h2>
+            <button @click="logs = []" class="text-sm text-gray-500 hover:text-gray-700">Clear Logs</button>
+        </header>
+
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+            <div class="space-y-3 font-mono text-sm max-h-[70vh] overflow-y-auto">
+                <template x-for="(log, i) in logs" :key="i">
+                    <div class="p-3 border-b last:border-0 border-gray-50 hover:bg-gray-50 flex items-start gap-3">
+                        <div class="text-xs text-gray-400 mt-0.5" x-text="new Date(log.timestamp).toLocaleTimeString()">
+                        </div>
+                        <div>
+                            <span class="font-bold text-gray-700" x-text="'User ' + log.user_id"></span>
+                            <span class="mx-2 px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs"
+                                x-text="log.action"></span>
+                            <span class="text-gray-500 text-xs" x-text="JSON.stringify(log.details || {})"></span>
+                        </div>
+                    </div>
+                </template>
+                <div x-show="logs.length === 0" class="text-gray-400 p-4 text-center">Waiting for activity...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Users Content -->
+            <div x-data="usersView()" x-init="initView()">
+                <header class="flex justify-between items-center mb-8">
+                    <h2 class="text-2xl font-bold">User Management</h2>
+                    <button @click="createModalOpen = true"
+                        class="bg-secondary text-white px-4 py-2 rounded-lg text-sm font-medium">Create User</button>
+                </header>
+
+                <div class="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
                     <table class="w-full text-left text-sm">
                         <thead class="bg-gray-50 text-gray-500 font-medium">
                             <tr>
-                                <th class="px-6 py-4">ID</th>
-                                <th class="px-6 py-4">Name</th>
-                                <th class="px-6 py-4">Created Date</th>
+                                <th class="px-6 py-4 whitespace-nowrap">Username</th>
+                                <th class="px-6 py-4 whitespace-nowrap">Role</th>
+                                <th class="px-6 py-4 whitespace-nowrap">Status</th>
+                                <th class="px-6 py-4 text-right whitespace-nowrap">Actions</th>
                             </tr>
                         </thead>
-                        <template x-for="c in customers" :key="c.id">
-                            <tbody class="border-b border-gray-100" x-data="{ docs: [], loading: false, loaded: false }">
-                                <tr class="hover:bg-gray-50 transition cursor-pointer" @click="if(expandedCustomer === c.id) { expandedCustomer = null } else { expandedCustomer = c.id; if(!loaded) { loading = true; fetch(`/api/customers/${c.id}/documents`).then(r=>r.json()).then(d=>{docs=d||[]; loaded=true; loading=false;}) } }">
-                                    <td class="px-6 py-4 text-xs text-gray-500 font-mono" x-text="c.id"></td>
-                                    <td class="px-6 py-4 font-medium text-gray-900 flex items-center gap-2">
-                                        <svg :class="expandedCustomer === c.id ? 'rotate-90 text-secondary' : 'text-gray-400'" class="w-4 h-4 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
-                                        <span x-text="c.name"></span>
+                        <tbody class="divide-y divide-gray-100">
+                            <template x-for="user in users" :key="user.id">
+                                <tr class="hover:bg-gray-50">
+                                    <td class="px-6 py-4 font-medium whitespace-nowrap" x-text="user.username"></td>
+                                    <td class="px-6 py-4 whitespace-nowrap"><span
+                                            class="px-2 py-1 rounded bg-blue-50 text-blue-700 text-xs"
+                                            x-text="user.role"></span></td>
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        <span x-show="!user.is_disabled"
+                                            class="text-green-600 font-medium text-xs">Active</span>
+                                        <span x-show="user.is_disabled"
+                                            class="text-red-600 font-medium text-xs">Disabled</span>
                                     </td>
-                                    <td class="px-6 py-4 text-gray-500" x-text="new Date(c.created_at).toLocaleDateString()"></td>
-                                </tr>
-                                <tr x-show="expandedCustomer === c.id" x-transition>
-                                    <td colspan="3" class="px-6 py-4 bg-gray-50 border-t-0">
-                                        <div x-show="loading" class="text-sm text-gray-500 flex items-center gap-2">
-                                            <svg class="animate-spin h-4 w-4 text-secondary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                                            Loading documents...
-                                        </div>
-                                        <div x-show="!loading && docs.length === 0" class="text-sm text-gray-500 pl-6">No documents found.</div>
-                                        <div x-show="!loading && docs.length > 0" class="space-y-2 pl-6 border-l-2 border-gray-200 ml-2">
-                                            <template x-for="doc in docs" :key="doc.id">
-                                                <div class="flex flex-col mb-2 p-3 bg-white rounded-lg border border-gray-100 shadow-sm hover:border-gray-200 transition">
-                                                    <div class="flex items-center justify-between">
-                                                        <div class="flex flex-col">
-                                                            <span class="font-medium text-sm text-gray-900" x-text="doc.original_name"></span>
-                                                            <span class="text-xs text-gray-500 capitalize" x-text="(doc.document_type || 'Unknown') + ' • ' + (doc.status.replace('_', ' '))"></span>
-                                                        </div>
-                                                        <div class="flex gap-2 items-center">
-                                                            <button @click.stop="doc.showOcr = !doc.showOcr" class="text-xs font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 px-3 py-1.5 rounded-md border border-purple-100 transition">OCR</button>
-                                                            <button @click.stop="openShareModal(doc)" class="text-xs border border-gray-200 text-gray-700 px-3 py-1.5 rounded-md hover:bg-gray-50 font-medium transition">Share</button>
-                                                            <button @click.stop="previewDocument(doc)" class="text-xs font-medium text-secondary hover:text-indigo-800 bg-indigo-50 px-3 py-1.5 rounded-md border border-indigo-100 transition">Preview</button>
-                                                        </div>
-                                                    </div>
-                                                    <div x-show="doc.showOcr" class="mt-3 p-3 bg-gray-50 rounded border border-gray-200" x-transition>
-                                                        <div class="flex justify-between items-center mb-2">
-                                                            <h5 class="text-xs font-bold text-gray-700">Extracted OCR Text</h5>
-                                                            <button @click.stop="navigator.clipboard.writeText(doc.ocr_text); alert('Text copied to clipboard!')" class="text-xs bg-white border border-gray-300 text-gray-600 px-2 py-1 rounded hover:bg-gray-100 transition">Copy</button>
-                                                        </div>
-                                                        <pre class="text-xs text-gray-600 whitespace-pre-wrap font-mono" x-text="doc.ocr_text || 'No text extracted.'"></pre>
-                                                    </div>
-                                                </div>
-                                            </template>
-                                        </div>
+                                    <td class="px-6 py-4 text-right flex justify-end gap-2 whitespace-nowrap">
+                                        <button x-show="user.role !== 'admin'" @click="toggleStatus(user)"
+                                            class="text-sm px-3 py-1 border rounded hover:bg-gray-50"
+                                            x-text="user.is_disabled ? 'Enable' : 'Disable'"></button>
+                                        <button x-show="user.role !== 'admin'" @click="resetPassword(user)"
+                                            class="text-sm px-3 py-1 border rounded hover:bg-gray-50 text-red-600">Reset
+                                            Password</button>
                                     </td>
                                 </tr>
-                            </tbody>
-                        </template>
-                        <tbody x-show="customers == null || customers.length === 0">
-                            <tr>
-                                <td colspan="3" class="px-6 py-8 text-center text-gray-500">No customers found.</td>
-                            </tr>
+                            </template>
                         </tbody>
                     </table>
                 </div>
 
-                <!-- Document Preview Modal -->
-                <div x-show="previewModalOpen" style="display: none;" class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
-                    <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-                        <div class="fixed inset-0 bg-gray-900 bg-opacity-75 transition-opacity" @click="previewModalOpen = false"></div>
-                        <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
-                        <div class="inline-block align-bottom bg-white rounded-xl text-left overflow-hidden shadow-2xl transform transition-all sm:my-8 sm:align-middle w-full max-w-4xl" style="height: 80vh;">
-                            <div class="bg-gray-50 px-4 py-3 border-b border-gray-200 flex justify-between items-center">
-                                <h3 class="text-lg leading-6 font-bold text-gray-900 flex flex-col">
-                                    <span x-text="previewDoc?.original_name"></span>
-                                    <span class="text-xs text-gray-500 font-normal" x-text="previewDoc?.document_type || 'Unknown Document'"></span>
-                                </h3>
-                                <div class="flex items-center gap-2">
-                                    <button x-show="previewDoc?.ocr_text" @click="navigator.clipboard.writeText(previewDoc.ocr_text); alert('Text copied to clipboard!')" class="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1 rounded border font-medium transition">
-                                        Copy Text
-                                    </button>
-                                    <button type="button" @click="previewModalOpen = false" class="text-gray-400 hover:text-gray-500 bg-white border border-gray-200 rounded-lg p-2 hover:bg-gray-50 transition">
-                                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                                    </button>
-                                </div>
-                            </div>
-                            <div class="h-full pb-16 flex flex-col md:flex-row">
-                                <div class="flex-1 h-full border-r border-gray-200">
-                                    <template x-if="previewUrl">
-                                        <iframe :src="previewUrl" class="w-full h-full border-0 bg-gray-100"></iframe>
-                                    </template>
-                                </div>
-                                <div class="w-full md:w-1/3 p-4 overflow-y-auto h-full bg-white" x-show="previewDoc?.ocr_text">
-                                    <h4 class="font-bold text-gray-700 mb-2 border-b pb-2">Extracted Text</h4>
-                                    <pre class="text-sm text-gray-600 whitespace-pre-wrap font-mono" x-text="previewDoc?.ocr_text"></pre>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Share Modal -->
-                <div x-show="shareModalOpen" style="display: none;" class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="share-title" role="dialog" aria-modal="true">
+                <!-- Create User Modal -->
+                <div x-show="createModalOpen" style="display: none;" class="fixed inset-0 z-50 overflow-y-auto">
                     <div class="flex items-center justify-center min-h-screen px-4">
-                        <div class="fixed inset-0 bg-gray-900 bg-opacity-75 transition-opacity" @click="shareModalOpen = false"></div>
-                        <div class="relative bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
-                            <h3 class="text-lg font-bold mb-4" id="share-title">Share Document</h3>
-                            
-                            <div x-show="!shareLink">
-                                <label class="block text-sm font-medium text-gray-700 mb-1">Expiration</label>
-                                <select x-model="shareDuration" class="w-full border rounded-lg px-3 py-2 mb-4">
-                                    <option value="1">1 Hour</option>
-                                    <option value="24">24 Hours</option>
-                                    <option value="72">3 Days</option>
-                                </select>
-                                
-                                <label class="flex items-center gap-2 mb-6 cursor-pointer">
-                                    <input type="checkbox" x-model="shareSingleUse" class="rounded text-secondary focus:ring-secondary">
-                                    <span class="text-sm text-gray-700">Single use only</span>
-                                </label>
-                                
-                                <div class="flex justify-end gap-3">
-                                    <button @click="shareModalOpen = false" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">Cancel</button>
-                                    <button @click="generateShareLink()" class="px-4 py-2 bg-secondary text-white rounded-lg text-sm font-medium hover:bg-opacity-90">Generate Link</button>
-                                </div>
-                            </div>
-                            
-                            <div x-show="shareLink">
-                                <p class="text-sm text-green-600 mb-4 font-medium">Link generated successfully!</p>
-                                <div class="flex items-center gap-2 mb-6">
-                                    <input type="text" readonly :value="shareLink" class="w-full border rounded-lg px-3 py-2 text-sm bg-gray-50 focus:outline-none">
-                                    <button @click="navigator.clipboard.writeText(shareLink); alert('Link copied to clipboard!')" class="px-3 py-2 bg-gray-100 border rounded-lg hover:bg-gray-200">Copy</button>
-                                </div>
-                                <div class="flex justify-end">
-                                    <button @click="shareModalOpen = false; shareLink = ''" class="px-4 py-2 bg-secondary text-white rounded-lg text-sm font-medium hover:bg-opacity-90">Done</button>
-                                </div>
+                        <div class="fixed inset-0 bg-gray-900 bg-opacity-75" @click="createModalOpen = false"></div>
+                        <div class="relative bg-white rounded-2xl w-full max-w-sm p-6">
+                            <h3 class="text-lg font-bold mb-4">Create User</h3>
+                            <input type="text" x-model="newUser.username" placeholder="Username"
+                                class="w-full border rounded p-2 mb-3">
+                            <input type="password" x-model="newUser.password" placeholder="Password (min 6 chars)"
+                                class="w-full border rounded p-2 mb-4">
+                            <div class="flex justify-end gap-2">
+                                <button @click="createModalOpen = false"
+                                    class="px-4 py-2 border rounded text-sm">Cancel</button>
+                                <button @click="createUser()"
+                                    class="px-4 py-2 bg-secondary text-white rounded text-sm">Create</button>
                             </div>
                         </div>
                     </div>
                 </div>
-            </div>
 
-        
-            <!-- Admin Panel -->
-            <div x-show="currentPath === '/admin'" class="space-y-8" style="display: none;">
-                
-                <!-- Users Content -->
-                <div x-data="usersView()" x-init="initView()">
-            <header class="flex justify-between items-center mb-8">
-                <h2 class="text-2xl font-bold">User Management</h2>
-                <button @click="createModalOpen = true" class="bg-secondary text-white px-4 py-2 rounded-lg text-sm font-medium">Create User</button>
-            </header>
+
+
+            </div>
+</div>
             
-            <div class="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
-                <table class="w-full text-left text-sm">
-                    <thead class="bg-gray-50 text-gray-500 font-medium">
-                        <tr>
-                            <th class="px-6 py-4">Username</th>
-                            <th class="px-6 py-4">Role</th>
-                            <th class="px-6 py-4">Status</th>
-                            <th class="px-6 py-4 text-right">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-gray-100">
-                        <template x-for="user in users" :key="user.id">
-                            <tr class="hover:bg-gray-50">
-                                <td class="px-6 py-4 font-medium" x-text="user.username"></td>
-                                <td class="px-6 py-4"><span class="px-2 py-1 rounded bg-blue-50 text-blue-700 text-xs" x-text="user.role"></span></td>
-                                <td class="px-6 py-4">
-                                    <span x-show="!user.is_disabled" class="text-green-600 font-medium text-xs">Active</span>
-                                    <span x-show="user.is_disabled" class="text-red-600 font-medium text-xs">Disabled</span>
-                                </td>
-                                <td class="px-6 py-4 text-right flex justify-end gap-2">
-                                    <button x-show="user.role !== 'admin'" @click="toggleStatus(user)" class="text-sm px-3 py-1 border rounded hover:bg-gray-50" x-text="user.is_disabled ? 'Enable' : 'Disable'"></button>
-                                    <button x-show="user.role !== 'admin'" @click="resetPassword(user)" class="text-sm px-3 py-1 border rounded hover:bg-gray-50 text-red-600">Reset Password</button>
-                                </td>
-                            </tr>
-                        </template>
-                    </tbody>
-                </table>
-            </div>
-            
-            <!-- Create User Modal -->
-            <div x-show="createModalOpen" style="display: none;" class="fixed inset-0 z-50 overflow-y-auto">
-                <div class="flex items-center justify-center min-h-screen px-4">
-                    <div class="fixed inset-0 bg-gray-900 bg-opacity-75" @click="createModalOpen = false"></div>
-                    <div class="relative bg-white rounded-2xl w-full max-w-sm p-6">
-                        <h3 class="text-lg font-bold mb-4">Create User</h3>
-                        <input type="text" x-model="newUser.username" placeholder="Username" class="w-full border rounded p-2 mb-3">
-                        <input type="password" x-model="newUser.password" placeholder="Password (min 6 chars)" class="w-full border rounded p-2 mb-4">
-                        <div class="flex justify-end gap-2">
-                            <button @click="createModalOpen = false" class="px-4 py-2 border rounded text-sm">Cancel</button>
-                            <button @click="createUser()" class="px-4 py-2 bg-secondary text-white rounded text-sm">Create</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-
-
-        </div>
-
-        <!-- Live Activity -->
-        <div x-data="activityView()" x-init="initView()" class="mt-12">
-            <header class="mb-8 flex justify-between items-center">
-                <h2 class="text-2xl font-bold flex items-center gap-2">
-                    Live Activity 
-                    <span class="relative flex h-3 w-3">
-                      <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                      <span class="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
-                    </span>
-                </h2>
-                <button @click="logs = []" class="text-sm text-gray-500 hover:text-gray-700">Clear Logs</button>
-            </header>
-            
-            <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-                <div class="space-y-3 font-mono text-sm max-h-[70vh] overflow-y-auto">
-                    <template x-for="(log, i) in logs" :key="i">
-                        <div class="p-3 border-b last:border-0 border-gray-50 hover:bg-gray-50 flex items-start gap-3">
-                            <div class="text-xs text-gray-400 mt-0.5" x-text="new Date(log.timestamp).toLocaleTimeString()"></div>
-                            <div>
-                                <span class="font-bold text-gray-700" x-text="'User ' + log.user_id"></span>
-                                <span class="mx-2 px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs" x-text="log.action"></span>
-                                <span class="text-gray-500 text-xs" x-text="JSON.stringify(log.details || {})"></span>
-                            </div>
-                        </div>
-                    </template>
-                    <div x-show="logs.length === 0" class="text-gray-400 p-4 text-center">Waiting for activity...</div>
-                </div>
-            </div>
-                </div>
-            </div>
         </main>
 
     </div>
@@ -727,15 +918,13 @@
                         window.dispatchEvent(new CustomEvent('login-success', { detail: { role: data.role, username: data.username } }));
                     });
                 }
-            }).catch(() => {})
+            }).catch(() => { })
         })
 
         function logout() {
             fetch('/api/logout', { method: 'POST' })
                 .finally(() => {
-                    // Reset client state and force a full page reload
-                    // so no cached data remains in memory
-                    window.location.href = '/';
+                    window.dispatchEvent(new CustomEvent('session-expired'));
                 });
         }
 
@@ -762,7 +951,7 @@
                 data.error = 'Network error. Please try again.';
             })
         }
-        
+
         function uploadForm() {
             return {
                 customerType: 'new',
@@ -773,7 +962,7 @@
                 uploading: false,
                 uploadSuccess: false,
                 uploadError: '',
-                
+
                 searchCustomers() {
                     if (this.searchQuery.length < 2) {
                         this.customers = [];
@@ -785,64 +974,64 @@
                             this.customers = data || [];
                         })
                 },
-                
+
                 selectCustomer(c) {
                     this.selectedCustomer = c;
                     this.customers = [];
                     this.searchQuery = '';
                 },
-                
+
                 handleDrop(e) {
                     if (e.dataTransfer.files.length > 0) {
                         this.file = e.dataTransfer.files[0];
                     }
                 },
-                
+
                 handleFileSelect(e) {
                     if (e.target.files.length > 0) {
                         this.file = e.target.files[0];
                     }
                 },
-                
+
                 uploadFile() {
                     if (!this.file) return;
                     if (this.customerType === 'existing' && !this.selectedCustomer) {
                         this.uploadError = "Please select an existing customer";
                         return;
                     }
-                    
+
                     this.uploading = true;
                     this.uploadError = '';
                     this.uploadSuccess = false;
-                    
+
                     const formData = new FormData();
                     formData.append('document', this.file);
                     formData.append('customer_type', this.customerType);
                     if (this.selectedCustomer) {
                         formData.append('customer_id', this.selectedCustomer.id);
                     }
-                    
+
                     fetch('/api/documents/upload', {
                         method: 'POST',
                         body: formData
                     })
-                    .then(res => {
-                        if (res.ok) {
-                            this.uploadSuccess = true;
-                            this.file = null;
-                            setTimeout(() => {
-                                this.uploadSuccess = false;
-                            }, 3000);
-                        } else {
-                            res.text().then(text => this.uploadError = text);
-                        }
-                    })
-                    .catch(err => {
-                        this.uploadError = "Network error occurred";
-                    })
-                    .finally(() => {
-                        this.uploading = false;
-                    })
+                        .then(res => {
+                            if (res.ok) {
+                                this.uploadSuccess = true;
+                                this.file = null;
+                                setTimeout(() => {
+                                    this.uploadSuccess = false;
+                                }, 3000);
+                            } else {
+                                res.text().then(text => this.uploadError = text);
+                            }
+                        })
+                        .catch(err => {
+                            this.uploadError = "Network error occurred";
+                        })
+                        .finally(() => {
+                            this.uploading = false;
+                        })
                 }
             }
         }
@@ -863,15 +1052,19 @@
 
                 initView() {
                     this.$watch('currentPath', val => {
-                        if(val === '/documents') this.fetchDocuments();
+                        if (val === '/documents') this.fetchDocuments();
                     });
-                    if(this.currentPath === '/documents') this.fetchDocuments();
+                    if (this.currentPath === '/documents') this.fetchDocuments();
                 },
 
                 fetchDocuments() {
                     fetch('/api/documents')
-                        .then(r => r.json())
-                        .then(d => this.documents = d || []);
+                        .then(r => {
+                            if (r.status === 401) { window.dispatchEvent(new CustomEvent('session-expired')); return null; }
+                            return r.json();
+                        })
+                        .then(d => { if (d) this.documents = d; })
+                        .catch(() => {});
                 },
 
                 openReviewModal(doc) {
@@ -903,7 +1096,7 @@
                 submitReview() {
                     this.submittingReview = true;
                     let custId = this.reviewCustomerType === 'new' ? 'new' : this.reviewSelectedCustomer.id;
-                    
+
                     fetch(`/api/documents/${this.reviewDoc.id}/confirm`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -915,17 +1108,17 @@
                             customer_id: custId
                         })
                     })
-                    .then(res => {
-                        if (res.ok) {
-                            this.reviewModalOpen = false;
-                            this.fetchDocuments();
-                        } else {
-                            alert("Failed to submit review");
-                        }
-                    })
-                    .finally(() => {
-                        this.submittingReview = false;
-                    });
+                        .then(res => {
+                            if (res.ok) {
+                                this.reviewModalOpen = false;
+                                this.fetchDocuments();
+                            } else {
+                                alert("Failed to submit review");
+                            }
+                        })
+                        .finally(() => {
+                            this.submittingReview = false;
+                        });
                 }
             }
         }
@@ -945,15 +1138,19 @@
 
                 initView() {
                     this.$watch('currentPath', val => {
-                        if(val === '/customers') this.fetchCustomers();
+                        if (val === '/customers') this.fetchCustomers();
                     });
-                    if(this.currentPath === '/customers') this.fetchCustomers();
+                    if (this.currentPath === '/customers') this.fetchCustomers();
                 },
 
                 fetchCustomers() {
                     fetch('/api/customers')
-                        .then(r => r.json())
-                        .then(d => this.customers = d || []);
+                        .then(r => {
+                            if (r.status === 401) { window.dispatchEvent(new CustomEvent('session-expired')); return null; }
+                            return r.json();
+                        })
+                        .then(d => { if (d) this.customers = d; })
+                        .catch(() => {});
                 },
 
                 previewDocument(doc) {
@@ -979,15 +1176,24 @@
                             single_use: this.shareSingleUse
                         })
                     })
-                    .then(res => res.json())
-                    .then(data => {
-                        if (data.token) {
-                            this.shareLink = window.location.origin + data.url;
-                        } else {
-                            alert("Failed to generate link");
-                        }
-                    })
-                    .catch(() => alert("Error generating link"));
+                        .then(res => {
+                            if (!res.ok) {
+                                res.text().then(text => alert("Failed to generate link: " + text));
+                                throw new Error("Failed to generate link");
+                            }
+                            return res.json();
+                        })
+                        .then(data => {
+                            if (data.token) {
+                                this.shareLink = window.location.origin + data.url;
+                            }
+                        })
+                        .catch(err => {
+                            // Error already alerted if from response, otherwise silently catch network errors
+                            if (err.message !== "Failed to generate link") {
+                                alert("Network error generating link");
+                            }
+                        });
                 }
             }
         }
@@ -1000,11 +1206,21 @@
                 wipeError: '',
                 wiping: false,
 
+                initView() {
+                    this.$watch('currentPath', val => {
+                        if (val === '/') this.loadStats();
+                    });
+                    if (this.currentPath === '/') this.loadStats();
+                },
+
                 loadStats() {
                     fetch('/api/stats')
-                        .then(r => r.json())
-                        .then(d => this.stats = d || this.stats)
-                        .catch(() => {});
+                        .then(r => {
+                            if (r.status === 401) { window.dispatchEvent(new CustomEvent('session-expired')); return null; }
+                            return r.json();
+                        })
+                        .then(d => { if (d) this.stats = d; })
+                        .catch(() => { });
                 },
 
                 closeWipeModal() {
@@ -1026,22 +1242,22 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ confirmation: 'wipe my data' })
                     })
-                    .then(res => {
-                        if (res.ok) {
-                            this.closeWipeModal();
-                            this.loadStats();
-                        } else {
-                            res.text().then(t => {
-                                this.wipeError = t || 'Wipe failed. Please try again.';
-                            });
-                        }
-                    })
-                    .catch(() => {
-                        this.wipeError = 'Network error. Please try again.';
-                    })
-                    .finally(() => {
-                        this.wiping = false;
-                    });
+                        .then(res => {
+                            if (res.ok) {
+                                this.closeWipeModal();
+                                this.loadStats();
+                            } else {
+                                res.text().then(t => {
+                                    this.wipeError = t || 'Wipe failed. Please try again.';
+                                });
+                            }
+                        })
+                        .catch(() => {
+                            this.wipeError = 'Network error. Please try again.';
+                        })
+                        .finally(() => {
+                            this.wiping = false;
+                        });
                 }
             }
         }
@@ -1054,13 +1270,19 @@
 
                 initView() {
                     this.$watch('currentPath', val => {
-                        if(val === '/users') this.fetchUsers();
+                        if (val === '/admin') this.fetchUsers();
                     });
-                    if(this.currentPath === '/users') this.fetchUsers();
+                    if (this.currentPath === '/admin') this.fetchUsers();
                 },
 
                 fetchUsers() {
-                    fetch('/api/admin/users').then(r=>r.json()).then(d=>this.users = d||[]);
+                    fetch('/api/admin/users')
+                        .then(r => {
+                            if (r.status === 401) { window.dispatchEvent(new CustomEvent('session-expired')); return null; }
+                            return r.json();
+                        })
+                        .then(d => { if (d) this.users = d; })
+                        .catch(() => {});
                 },
 
                 createUser() {
@@ -1074,7 +1296,7 @@
                             this.newUser = { username: '', password: '' };
                             this.fetchUsers();
                         } else {
-                            alert("Failed to create user");
+                            res.text().then(text => alert("Failed: " + text));
                         }
                     });
                 },
@@ -1109,10 +1331,10 @@
 
                 initView() {
                     this.$watch('currentPath', val => {
-                        if(val === '/activity') this.connectSSE();
+                        if (val === '/admin') this.connectSSE();
                         else this.disconnectSSE();
                     });
-                    if(this.currentPath === '/activity') this.connectSSE();
+                    if (this.currentPath === '/admin') this.connectSSE();
                 },
 
                 connectSSE() {
@@ -1123,7 +1345,7 @@
                             const data = JSON.parse(e.data);
                             this.logs.unshift(data);
                             if (this.logs.length > 200) this.logs.pop(); // limit display
-                        } catch(err) {}
+                        } catch (err) { }
                     };
                 },
 
@@ -1137,5 +1359,5 @@
         }
     </script>
 </body>
-</html>
 
+</html>
