@@ -7,6 +7,7 @@ import (
 
 	"docunest/internal/database"
 	"docunest/internal/models"
+
 	"github.com/alexedwards/argon2id"
 	"github.com/gorilla/mux"
 )
@@ -77,18 +78,19 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	adminID, _ := r.Context().Value(UserIDKey).(int)
+
 	var userID int
 	err = database.DB.QueryRow(
-		"INSERT INTO users (username, password_hash, role) VALUES ($1, $2, 'user') RETURNING id",
-		req.Username, hash,
+		"INSERT INTO users (username, password_hash, role, admin_id) VALUES ($1, $2, 'user', $3) RETURNING id",
+		req.Username, hash, adminID,
 	).Scan(&userID)
 	if err != nil {
 		http.Error(w, "Failed to create user (username may already exist)", http.StatusConflict)
 		return
 	}
 
-	adminID, _ := r.Context().Value(UserIDKey).(int)
-	LogEvent(adminID, "user_created", map[string]interface{}{"created_user_id": userID, "username": req.Username})
+	LogEvent(adminID, adminID, "user_created", map[string]interface{}{"created_user_id": userID, "username": req.Username})
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"message": "User created", "id": userID})
@@ -112,7 +114,7 @@ func DisableUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	adminID, _ := r.Context().Value(UserIDKey).(int)
-	LogEvent(adminID, "user_toggled_disable", map[string]interface{}{"target_user_id": userID, "now_disabled": !isD})
+	LogEvent(adminID, adminID, "user_toggled_disable", map[string]interface{}{"target_user_id": userID, "now_disabled": !isD})
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"message": "User status updated", "is_disabled": !isD})
@@ -141,14 +143,14 @@ func ResetPassword(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to update password", http.StatusInternalServerError)
 		return
 	}
-	
+
 	if affected, _ := res.RowsAffected(); affected == 0 {
 		http.Error(w, "User not found or cannot reset admin password", http.StatusForbidden)
 		return
 	}
 
 	adminID, _ := r.Context().Value(UserIDKey).(int)
-	LogEvent(adminID, "user_password_reset", map[string]interface{}{"target_user_id": userID})
+	LogEvent(adminID, adminID, "user_password_reset", map[string]interface{}{"target_user_id": userID})
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"message": "Password reset successfully"})

@@ -78,9 +78,10 @@ func AnalyzeWebhook(w http.ResponseWriter, r *http.Request) {
 	// status update to "processing" raced). Do not overwrite documents that have
 	// already transitioned to needs_review, completed, or been re-processed.
 	var currentStatus string
+	var workspaceID int
 	err = database.DB.QueryRow(
-		"SELECT status FROM documents WHERE id = $1", payload.DocumentID,
-	).Scan(&currentStatus)
+		"SELECT status, workspace_id FROM documents WHERE id = $1", payload.DocumentID,
+	).Scan(&currentStatus, &workspaceID)
 	if err != nil {
 		log.Printf("Webhook: document %d not found: %v", payload.DocumentID, err)
 		http.Error(w, "Document not found", http.StatusNotFound)
@@ -120,6 +121,10 @@ func AnalyzeWebhook(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		log.Printf("Webhook: document %d → needs_review", payload.DocumentID)
+		LogEvent(workspaceID, 0, "document_processing_completed", map[string]interface{}{
+			"document_id": payload.DocumentID,
+			"status":      "needs_review",
+		})
 
 	} else {
 		// status == "failed"
@@ -144,6 +149,10 @@ func AnalyzeWebhook(w http.ResponseWriter, r *http.Request) {
 			errMsg = *payload.ErrorMessage
 		}
 		log.Printf("Webhook: document %d → failed (%s)", payload.DocumentID, errMsg)
+		LogEvent(workspaceID, 0, "document_processing_failed", map[string]interface{}{
+			"document_id":   payload.DocumentID,
+			"error_message": errMsg,
+		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")

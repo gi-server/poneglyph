@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DocuNest - Smart. Local. Secure.</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#4F46E5">
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW registration failed:', err));
+            });
+        }
+    </script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        primary: '#0F172A', // Deep slate for sidebar
+                        secondary: '#4F46E5', // Elegant indigo accent
+                        background: '#F8FAFC',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+    </style>
+</head>
+
+<body class="bg-background text-gray-800 h-screen overflow-hidden"
+    x-data="{ currentPath: '/', isAuthenticated: false, mobileMenuOpen: false, userRole: 'user', username: '' }"
+    @login-success.window="isAuthenticated = true; if($event.detail) { userRole = $event.detail.role; username = $event.detail.username; }">
+
+    <!-- Login View (Simple) -->
+    <div x-show="!isAuthenticated" class="h-full flex items-center justify-center">
+        <div class="bg-white p-8 rounded-xl shadow-lg w-96">
+            <h2 class="text-2xl font-bold mb-6 text-center text-primary">DocuNest Login</h2>
+            <form @submit.prevent="login($data)" x-data="{ username: '', password: '', error: '' }">
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                    <input type="text" x-model="username"
+                        class="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-secondary">
+                </div>
+                <div class="mb-6">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                    <input type="password" x-model="password"
+                        class="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-secondary">
+                </div>
+                <div x-show="error" class="text-red-500 text-sm mb-4" x-text="error"></div>
+                <button type="submit"
+                    class="w-full bg-secondary text-white font-medium rounded-lg py-2 hover:bg-opacity-90 transition">Login</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- App View -->
+    <div x-show="isAuthenticated" class="flex h-full w-full relative">
+
+        <!-- Mobile Header (Visible only on small screens) -->
+        <div
+            class="md:hidden absolute top-0 left-0 right-0 h-16 bg-white border-b flex items-center justify-between px-4 z-20">
+            <div class="flex items-center gap-2">
+                <div class="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center">
+                    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path>
+                    </svg>
+                </div>
+                <h1 class="font-bold">DocuNest</h1>
+            </div>
+            <button @click="mobileMenuOpen = !mobileMenuOpen" class="p-2 text-gray-600 focus:outline-none">
+                <svg x-show="!mobileMenuOpen" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16">
+                    </path>
+                </svg>
+                <svg x-show="mobileMenuOpen" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
+                    </path>
+                </svg>
+            </button>
+        </div>
+
+        <!-- Sidebar Background Overlay for Mobile -->
+        <div x-show="mobileMenuOpen" @click="mobileMenuOpen = false" class="fixed inset-0 bg-gray-900/50 z-30 md:hidden"
+            style="display: none;"></div>
+
+        <!-- Sidebar -->
+        <aside :class="mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'"
+            class="fixed md:static inset-y-0 left-0 z-40 w-64 bg-primary text-white flex flex-col justify-between transition-transform duration-300 md:translate-x-0">
+            <div>
+                <div class="p-6 flex items-center gap-3 hidden md:flex">
+                    <div class="w-10 h-10 rounded-xl bg-secondary flex items-center justify-center">
+                        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path>
+                        </svg>
+                    </div>
+                    <div>
+                        <h1 class="font-bold text-lg leading-tight">DocuNest</h1>
+                        <p class="text-xs text-gray-400">Smart. Local. Secure.</p>
+                    </div>
+                </div>
+
+                <nav class="px-4 mt-6 space-y-1">
+                    <a href="#" @click.prevent="currentPath = '/'"
+                        :class="currentPath === '/' ? 'bg-secondary text-white' : 'text-gray-300 hover:bg-white/10'"
+                        class="flex items-center gap-3 px-4 py-3 rounded-xl transition">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6">
+                            </path>
+                        </svg>
+                        Dashboard
+                    </a>
+                    <a href="#" @click.prevent="currentPath = '/upload'"
+                        :class="currentPath === '/upload' ? 'bg-secondary text-white' : 'text-gray-300 hover:bg-white/10'"
+                        class="flex items-center gap-3 px-4 py-3 rounded-xl transition">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
+                        </svg>
+                        Upload Document
+                    </a>
+                    <a href="#" @click.prevent="currentPath = '/customers'"
+                        :class="currentPath === '/customers' ? 'bg-secondary text-white' : 'text-gray-300 hover:bg-white/10'"
+                        class="flex items-center gap-3 px-4 py-3 rounded-xl transition">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z">
+                            </path>
+                        </svg>
+                        Customers
+                    </a>
+                    <a href="#" @click.prevent="currentPath = '/documents'; mobileMenuOpen = false"
+                        :class="currentPath === '/documents' ? 'bg-secondary text-white' : 'text-gray-300 hover:bg-white/10'"
+                        class="flex items-center gap-3 px-4 py-3 rounded-xl transition">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
+                            </path>
+                        </svg>
+                        Documents
+                    </a>
+                    <a x-show="userRole === 'admin'" href="#"
+                        @click.prevent="currentPath = '/admin'; mobileMenuOpen = false"
+                        :class="currentPath === '/admin' ? 'bg-secondary text-white' : 'text-gray-300 hover:bg-white/10'"
+                        class="flex items-center gap-3 px-4 py-3 rounded-xl transition">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z">
+                            </path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                        </svg>
+                        Admin Panel
+                    </a>
+                </nav>
+            </div>
+
+            <div class="p-4">
+                <div class="bg-white/10 p-4 rounded-xl flex items-center justify-between gap-3">
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-full bg-secondary flex items-center justify-center text-sm font-bold uppercase"
+                            x-text="username ? username.substring(0, 2) : 'U'">
+                        </div>
+                        <div>
+                            <div class="text-sm font-medium capitalize" x-text="username || 'User'"></div>
+                            <div class="text-xs text-gray-400 capitalize" x-text="userRole"></div>
+                        </div>
+                    </div>
+                    <button @click="logout()" title="Sign out"
+                        class="text-gray-400 hover:text-white transition p-1 rounded-lg hover:bg-white/10">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1">
+                            </path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="flex-1 overflow-y-auto p-4 md:p-8 pt-20 md:pt-8 relative">
+            <header class="flex justify-between items-center mb-8">
+                <div>
+                    <h2 class="text-2xl font-bold"
+                        x-text="currentPath === '/' ? 'Welcome back' : (currentPath === '/upload' ? 'Upload Document' : (currentPath === '/admin' ? 'Admin Panel' : ''))">
+                    </h2>
+                    <p class="text-gray-500 text-sm" x-show="currentPath === '/'">Here's what's happening with your
+                        documents today.</p>
+                </div>
+                <div class="flex items-center gap-4">
+                    <button
+                        class="w-10 h-10 rounded-full bg-white shadow flex items-center justify-center text-gray-600 hover:bg-gray-50">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9">
+                            </path>
+                        </svg>
+                    </button>
+                    <div class="w-10 h-10 rounded-full bg-secondary text-white flex items-center justify-center font-bold uppercase"
+                        x-text="username ? username.substring(0, 2) : 'U'">
+                    </div>
+                </div>
+            </header>
+
+            {{ template "dashboard" . }}
+            {{ template "upload" . }}
+            {{ template "documents" . }}
+            {{ template "customers" . }}
+            {{ template "admin" . }}
+            
+        </main>
+
+    </div>
+
+    <script>
+        document.addEventListener('alpine:init', () => {
+            fetch('/api/ping').then(res => {
+                if (res.ok) {
+                    res.json().then(data => {
+                        window.dispatchEvent(new CustomEvent('login-success', { detail: { role: data.role, username: data.username } }));
+                    });
+                }
+            }).catch(() => { })
+        })
+
+        function logout() {
+            fetch('/api/logout', { method: 'POST' })
+                .finally(() => {
+                    // Reset client state and force a full page reload
+                    // so no cached data remains in memory
+                    window.location.href = '/';
+                });
+        }
+
+        function login(data) {
+            fetch('/api/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: data.username, password: data.password })
+            }).then(res => {
+                if (res.ok) {
+                    // Fetch ping again to get role and username
+                    fetch('/api/ping').then(r => r.json()).then(d => {
+                        window.dispatchEvent(new CustomEvent('login-success', { detail: { role: d.role, username: d.username } }));
+                    });
+                    data.error = '';
+                } else if (res.status === 429) {
+                    data.error = 'Too many failed attempts. Please wait 15 minutes.';
+                } else if (res.status === 403) {
+                    data.error = 'Account is disabled';
+                } else {
+                    data.error = 'Invalid credentials';
+                }
+            }).catch(() => {
+                data.error = 'Network error. Please try again.';
+            })
+        }
+
+        function uploadForm() {
+            return {
+                customerType: 'new',
+                searchQuery: '',
+                customers: [],
+                selectedCustomer: null,
+                file: null,
+                uploading: false,
+                uploadSuccess: false,
+                uploadError: '',
+
+                searchCustomers() {
+                    if (this.searchQuery.length < 2) {
+                        this.customers = [];
+                        return;
+                    }
+                    fetch(`/api/customers?q=${encodeURIComponent(this.searchQuery)}`)
+                        .then(res => res.json())
+                        .then(data => {
+                            this.customers = data || [];
+                        })
+                },
+
+                selectCustomer(c) {
+                    this.selectedCustomer = c;
+                    this.customers = [];
+                    this.searchQuery = '';
+                },
+
+                handleDrop(e) {
+                    if (e.dataTransfer.files.length > 0) {
+                        this.file = e.dataTransfer.files[0];
+                    }
+                },
+
+                handleFileSelect(e) {
+                    if (e.target.files.length > 0) {
+                        this.file = e.target.files[0];
+                    }
+                },
+
+                uploadFile() {
+                    if (!this.file) return;
+                    if (this.customerType === 'existing' && !this.selectedCustomer) {
+                        this.uploadError = "Please select an existing customer";
+                        return;
+                    }
+
+                    this.uploading = true;
+                    this.uploadError = '';
+                    this.uploadSuccess = false;
+
+                    const formData = new FormData();
+                    formData.append('document', this.file);
+                    formData.append('customer_type', this.customerType);
+                    if (this.selectedCustomer) {
+                        formData.append('customer_id', this.selectedCustomer.id);
+                    }
+
+                    fetch('/api/documents/upload', {
+                        method: 'POST',
+                        body: formData
+                    })
+                        .then(res => {
+                            if (res.ok) {
+                                this.uploadSuccess = true;
+                                this.file = null;
+                                setTimeout(() => {
+                                    this.uploadSuccess = false;
+                                }, 3000);
+                            } else {
+                                res.text().then(text => this.uploadError = text);
+                            }
+                        })
+                        .catch(err => {
+                            this.uploadError = "Network error occurred";
+                        })
+                        .finally(() => {
+                            this.uploading = false;
+                        })
+                }
+            }
+        }
+
+        function documentsView() {
+            return {
+                documents: [],
+                reviewModalOpen: false,
+                reviewDoc: null,
+                reviewCustomerType: 'new',
+                reviewSearchQuery: '',
+                reviewCustomers: [],
+                reviewSelectedCustomer: null,
+                submittingReview: false,
+                previewModalOpen: false,
+                previewDoc: null,
+                previewUrl: null,
+
+                initView() {
+                    this.$watch('currentPath', val => {
+                        if (val === '/documents') this.fetchDocuments();
+                    });
+                    if (this.currentPath === '/documents') this.fetchDocuments();
+                },
+
+                fetchDocuments() {
+                    fetch('/api/documents')
+                        .then(r => r.json())
+                        .then(d => this.documents = d || []);
+                },
+
+                openReviewModal(doc) {
+                    this.reviewDoc = { ...doc };
+                    this.reviewCustomerType = 'new';
+                    this.reviewSearchQuery = '';
+                    this.reviewSelectedCustomer = null;
+                    this.reviewModalOpen = true;
+                },
+
+                searchReviewCustomers() {
+                    if (this.reviewSearchQuery.length < 2) {
+                        this.reviewCustomers = [];
+                        return;
+                    }
+                    fetch(`/api/customers?q=${encodeURIComponent(this.reviewSearchQuery)}`)
+                        .then(res => res.json())
+                        .then(data => {
+                            this.reviewCustomers = data || [];
+                        })
+                },
+
+                selectReviewCustomer(c) {
+                    this.reviewSelectedCustomer = c;
+                    this.reviewCustomers = [];
+                    this.reviewSearchQuery = '';
+                },
+
+                submitReview() {
+                    this.submittingReview = true;
+                    let custId = this.reviewCustomerType === 'new' ? 'new' : this.reviewSelectedCustomer.id;
+
+                    fetch(`/api/documents/${this.reviewDoc.id}/confirm`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            person_name: this.reviewDoc.person_name,
+                            document_type: this.reviewDoc.document_type,
+                            dob: this.reviewDoc.dob || "",
+                            document_id_number: this.reviewDoc.document_id_number || "",
+                            customer_id: custId
+                        })
+                    })
+                        .then(res => {
+                            if (res.ok) {
+                                this.reviewModalOpen = false;
+                                this.fetchDocuments();
+                            } else {
+                                alert("Failed to submit review");
+                            }
+                        })
+                        .finally(() => {
+                            this.submittingReview = false;
+                        });
+                }
+            }
+        }
+
+        function customersView() {
+            return {
+                customers: [],
+                expandedCustomer: null,
+                previewModalOpen: false,
+                previewDoc: null,
+                previewUrl: null,
+                shareModalOpen: false,
+                shareDoc: null,
+                shareDuration: '1',
+                shareSingleUse: false,
+                shareLink: '',
+
+                initView() {
+                    this.$watch('currentPath', val => {
+                        if (val === '/customers') this.fetchCustomers();
+                    });
+                    if (this.currentPath === '/customers') this.fetchCustomers();
+                },
+
+                fetchCustomers() {
+                    fetch('/api/customers')
+                        .then(r => r.json())
+                        .then(d => this.customers = d || []);
+                },
+
+                previewDocument(doc) {
+                    this.previewDoc = doc;
+                    this.previewUrl = `/api/documents/${doc.id}/view`;
+                    this.previewModalOpen = true;
+                },
+
+                openShareModal(doc) {
+                    this.shareDoc = doc;
+                    this.shareDuration = '1';
+                    this.shareSingleUse = false;
+                    this.shareLink = '';
+                    this.shareModalOpen = true;
+                },
+
+                generateShareLink() {
+                    fetch(`/api/documents/${this.shareDoc.id}/share`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            expires_in_hours: parseInt(this.shareDuration),
+                            single_use: this.shareSingleUse
+                        })
+                    })
+                        .then(res => res.json())
+                        .then(data => {
+                            if (data.token) {
+                                this.shareLink = window.location.origin + data.url;
+                            } else {
+                                alert("Failed to generate link");
+                            }
+                        })
+                        .catch(() => alert("Error generating link"));
+                }
+            }
+        }
+
+        function dashboardView() {
+            return {
+                stats: { total_documents: 0, total_customers: 0, processed_today: 0 },
+                wipeModalOpen: false,
+                wipeConfirmInput: '',
+                wipeError: '',
+                wiping: false,
+
+                loadStats() {
+                    fetch('/api/stats')
+                        .then(r => r.json())
+                        .then(d => this.stats = d || this.stats)
+                        .catch(() => { });
+                },
+
+                closeWipeModal() {
+                    this.wipeModalOpen = false;
+                    this.wipeConfirmInput = '';
+                    this.wipeError = '';
+                },
+
+                submitWipe() {
+                    if (this.wipeConfirmInput !== 'wipe my data') {
+                        this.wipeError = 'Phrase does not match. Type exactly: wipe my data';
+                        return;
+                    }
+                    this.wiping = true;
+                    this.wipeError = '';
+
+                    fetch('/api/admin/wipe', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ confirmation: 'wipe my data' })
+                    })
+                        .then(res => {
+                            if (res.ok) {
+                                this.closeWipeModal();
+                                this.loadStats();
+                            } else {
+                                res.text().then(t => {
+                                    this.wipeError = t || 'Wipe failed. Please try again.';
+                                });
+                            }
+                        })
+                        .catch(() => {
+                            this.wipeError = 'Network error. Please try again.';
+                        })
+                        .finally(() => {
+                            this.wiping = false;
+                        });
+                }
+            }
+        }
+
+        function usersView() {
+            return {
+                users: [],
+                createModalOpen: false,
+                newUser: { username: '', password: '' },
+
+                initView() {
+                    this.$watch('currentPath', val => {
+                        if (val === '/users') this.fetchUsers();
+                    });
+                    if (this.currentPath === '/users') this.fetchUsers();
+                },
+
+                fetchUsers() {
+                    fetch('/api/admin/users').then(r => r.json()).then(d => this.users = d || []);
+                },
+
+                createUser() {
+                    fetch('/api/admin/users', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(this.newUser)
+                    }).then(res => {
+                        if (res.ok) {
+                            this.createModalOpen = false;
+                            this.newUser = { username: '', password: '' };
+                            this.fetchUsers();
+                        } else {
+                            alert("Failed to create user");
+                        }
+                    });
+                },
+
+                toggleStatus(user) {
+                    fetch(`/api/admin/users/${user.id}/disable`, { method: 'POST' })
+                        .then(() => this.fetchUsers());
+                },
+
+                resetPassword(user) {
+                    const newPass = prompt(`Enter new password for ${user.username}:`);
+                    if (newPass && newPass.length >= 6) {
+                        fetch(`/api/admin/users/${user.id}/reset_password`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ password: newPass })
+                        }).then(r => {
+                            if (r.ok) alert("Password reset successfully");
+                            else alert("Failed to reset password");
+                        });
+                    } else if (newPass) {
+                        alert("Password must be at least 6 characters");
+                    }
+                }
+            }
+        }
+
+        function activityView() {
+            return {
+                logs: [],
+                eventSource: null,
+
+                initView() {
+                    this.$watch('currentPath', val => {
+                        if (val === '/activity') this.connectSSE();
+                        else this.disconnectSSE();
+                    });
+                    if (this.currentPath === '/activity') this.connectSSE();
+                },
+
+                connectSSE() {
+                    if (this.eventSource) return;
+                    this.eventSource = new EventSource('/api/admin/logs/stream');
+                    this.eventSource.onmessage = (e) => {
+                        try {
+                            const data = JSON.parse(e.data);
+                            this.logs.unshift(data);
+                            if (this.logs.length > 200) this.logs.pop(); // limit display
+                        } catch (err) { }
+                    };
+                },
+
+                disconnectSSE() {
+                    if (this.eventSource) {
+                        this.eventSource.close();
+                        this.eventSource = null;
+                    }
+                }
+            }
+        }
+    </script>
+</body>
+
+</html>

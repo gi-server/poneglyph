@@ -8,11 +8,13 @@ import (
 
 	"docunest/internal/database"
 	"docunest/internal/models"
+
 	"github.com/gorilla/mux"
 )
 
 func GetCustomers(w http.ResponseWriter, r *http.Request) {
-	userID, ok := r.Context().Value(UserIDKey).(int)
+	workspaceID, _ := r.Context().Value(WorkspaceIDKey).(int)
+	_, ok := r.Context().Value(UserIDKey).(int)
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
@@ -38,8 +40,8 @@ func GetCustomers(w http.ResponseWriter, r *http.Request) {
 			)
 		} else {
 			rows, qErr = database.DB.Query(
-				"SELECT id, name, created_at FROM customers WHERE user_id = $1 AND name ILIKE $2 ORDER BY name ASC LIMIT 20",
-				userID, "%"+query+"%",
+				"SELECT id, name, created_at FROM customers WHERE workspace_id = $1 AND name ILIKE $2 ORDER BY name ASC LIMIT 20",
+				workspaceID, "%"+query+"%",
 			)
 		}
 		if qErr != nil {
@@ -65,8 +67,8 @@ func GetCustomers(w http.ResponseWriter, r *http.Request) {
 			)
 		} else {
 			rows, qErr = database.DB.Query(
-				"SELECT id, name, created_at FROM customers WHERE user_id = $1 ORDER BY name ASC LIMIT 50",
-				userID,
+				"SELECT id, name, created_at FROM customers WHERE workspace_id = $1 ORDER BY name ASC LIMIT 50",
+				workspaceID,
 			)
 		}
 		if qErr != nil {
@@ -93,7 +95,8 @@ func GetCustomers(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetCustomerDocuments(w http.ResponseWriter, r *http.Request) {
-	userID, ok := r.Context().Value(UserIDKey).(int)
+	workspaceID, _ := r.Context().Value(WorkspaceIDKey).(int)
+	_, ok := r.Context().Value(UserIDKey).(int)
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
@@ -114,8 +117,8 @@ func GetCustomerDocuments(w http.ResponseWriter, r *http.Request) {
 	if role != "admin" {
 		var exists bool
 		err := database.DB.QueryRow(
-			"SELECT EXISTS(SELECT 1 FROM customers WHERE id = $1 AND user_id = $2)",
-			customerID, userID,
+			"SELECT EXISTS(SELECT 1 FROM customers WHERE id = $1 AND workspace_id = $2)",
+			customerID, workspaceID,
 		).Scan(&exists)
 		if err != nil || !exists {
 			http.Error(w, "Customer not found or access denied", http.StatusNotFound)

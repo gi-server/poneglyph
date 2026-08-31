@@ -1,0 +1,108 @@
+{{ define "admin" }}
+<!-- Admin Panel -->
+<div x-show="currentPath === '/admin'" class="space-y-8" style="display: none;">
+
+    <!-- Live Activity -->
+    <div x-data="activityView()" x-init="initView()" class="mt-12">
+        <header class="mb-8 flex justify-between items-center">
+            <h2 class="text-2xl font-bold flex items-center gap-2">
+                Live Activity
+                <span class="relative flex h-3 w-3">
+                    <span
+                        class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                </span>
+            </h2>
+            <button @click="logs = []" class="text-sm text-gray-500 hover:text-gray-700">Clear Logs</button>
+        </header>
+
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+            <div class="space-y-3 font-mono text-sm max-h-[70vh] overflow-y-auto">
+                <template x-for="(log, i) in logs" :key="i">
+                    <div class="p-3 border-b last:border-0 border-gray-50 hover:bg-gray-50 flex items-start gap-3">
+                        <div class="text-xs text-gray-400 mt-0.5" x-text="new Date(log.timestamp).toLocaleTimeString()">
+                        </div>
+                        <div>
+                            <span class="font-bold text-gray-700" x-text="'User ' + log.user_id"></span>
+                            <span class="mx-2 px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs"
+                                x-text="log.action"></span>
+                            <span class="text-gray-500 text-xs" x-text="JSON.stringify(log.details || {})"></span>
+                        </div>
+                    </div>
+                </template>
+                <div x-show="logs.length === 0" class="text-gray-400 p-4 text-center">Waiting for activity...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Users Content -->
+            <div x-data="usersView()" x-init="initView()">
+                <header class="flex justify-between items-center mb-8">
+                    <h2 class="text-2xl font-bold">User Management</h2>
+                    <button @click="createModalOpen = true"
+                        class="bg-secondary text-white px-4 py-2 rounded-lg text-sm font-medium">Create User</button>
+                </header>
+
+                <div class="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-gray-50 text-gray-500 font-medium">
+                            <tr>
+                                <th class="px-6 py-4">Username</th>
+                                <th class="px-6 py-4">Role</th>
+                                <th class="px-6 py-4">Status</th>
+                                <th class="px-6 py-4 text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">
+                            <template x-for="user in users" :key="user.id">
+                                <tr class="hover:bg-gray-50">
+                                    <td class="px-6 py-4 font-medium" x-text="user.username"></td>
+                                    <td class="px-6 py-4"><span
+                                            class="px-2 py-1 rounded bg-blue-50 text-blue-700 text-xs"
+                                            x-text="user.role"></span></td>
+                                    <td class="px-6 py-4">
+                                        <span x-show="!user.is_disabled"
+                                            class="text-green-600 font-medium text-xs">Active</span>
+                                        <span x-show="user.is_disabled"
+                                            class="text-red-600 font-medium text-xs">Disabled</span>
+                                    </td>
+                                    <td class="px-6 py-4 text-right flex justify-end gap-2">
+                                        <button x-show="user.role !== 'admin'" @click="toggleStatus(user)"
+                                            class="text-sm px-3 py-1 border rounded hover:bg-gray-50"
+                                            x-text="user.is_disabled ? 'Enable' : 'Disable'"></button>
+                                        <button x-show="user.role !== 'admin'" @click="resetPassword(user)"
+                                            class="text-sm px-3 py-1 border rounded hover:bg-gray-50 text-red-600">Reset
+                                            Password</button>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Create User Modal -->
+                <div x-show="createModalOpen" style="display: none;" class="fixed inset-0 z-50 overflow-y-auto">
+                    <div class="flex items-center justify-center min-h-screen px-4">
+                        <div class="fixed inset-0 bg-gray-900 bg-opacity-75" @click="createModalOpen = false"></div>
+                        <div class="relative bg-white rounded-2xl w-full max-w-sm p-6">
+                            <h3 class="text-lg font-bold mb-4">Create User</h3>
+                            <input type="text" x-model="newUser.username" placeholder="Username"
+                                class="w-full border rounded p-2 mb-3">
+                            <input type="password" x-model="newUser.password" placeholder="Password (min 6 chars)"
+                                class="w-full border rounded p-2 mb-4">
+                            <div class="flex justify-end gap-2">
+                                <button @click="createModalOpen = false"
+                                    class="px-4 py-2 border rounded text-sm">Cancel</button>
+                                <button @click="createUser()"
+                                    class="px-4 py-2 bg-secondary text-white rounded text-sm">Create</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+
+
+            </div>
+</div>
+
+{{ end }}

@@ -9,11 +9,13 @@ import (
 
 	"docunest/internal/database"
 	"docunest/internal/models"
+
 	"github.com/gorilla/mux"
 )
 
 func GetDocuments(w http.ResponseWriter, r *http.Request) {
-	userID, ok := r.Context().Value(UserIDKey).(int)
+	workspaceID, _ := r.Context().Value(WorkspaceIDKey).(int)
+	_, ok := r.Context().Value(UserIDKey).(int)
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
@@ -36,9 +38,9 @@ func GetDocuments(w http.ResponseWriter, r *http.Request) {
 			SELECT d.id, d.filename, d.original_name, d.status, d.document_type, d.person_name, d.dob, d.document_id_number, d.confidence, d.created_at, d.ocr_text, c.name 
 			FROM documents d 
 			LEFT JOIN customers c ON d.customer_id = c.id 
-			WHERE d.user_id = $1
+			WHERE d.workspace_id = $1
 			ORDER BY d.created_at DESC LIMIT 50
-		`, userID)
+		`, workspaceID)
 	}
 	if err != nil {
 		log.Printf("Failed to fetch documents: %v", err)
@@ -77,6 +79,7 @@ func GetDocuments(w http.ResponseWriter, r *http.Request) {
 // but X-Content-Type-Options: nosniff is set via SecurityHeaders middleware
 // to prevent MIME sniffing of served content.
 func ViewDocument(w http.ResponseWriter, r *http.Request) {
+	workspaceID, _ := r.Context().Value(WorkspaceIDKey).(int)
 	userID, ok := r.Context().Value(UserIDKey).(int)
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -99,7 +102,7 @@ func ViewDocument(w http.ResponseWriter, r *http.Request) {
 		).Scan(&storedPath)
 	} else {
 		err = database.DB.QueryRow(
-			"SELECT filepath FROM documents WHERE id = $1 AND user_id = $2",
+			"SELECT filepath FROM documents WHERE id = $1 AND workspace_id = $2",
 			docID, userID,
 		).Scan(&storedPath)
 	}
@@ -127,7 +130,7 @@ func ViewDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	LogEvent(userID, "document_viewed", map[string]interface{}{"document_id": docID})
+	LogEvent(workspaceID, userID, "document_viewed", map[string]interface{}{"document_id": docID})
 
 	// Serve inline for browser preview; X-Content-Type-Options is set by middleware
 	w.Header().Set("Content-Disposition", "inline")
