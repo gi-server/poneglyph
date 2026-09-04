@@ -97,6 +97,7 @@ func InitSchema() error {
 		document_id_number VARCHAR(100),
 		confidence FLOAT,
 		customer_id VARCHAR(50) REFERENCES customers(id),
+		job_id VARCHAR(36),
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	);
 
@@ -132,6 +133,7 @@ func InitSchema() error {
 	DB.Exec("ALTER TABLE documents ADD COLUMN dob VARCHAR(50)")
 	DB.Exec("ALTER TABLE documents ADD COLUMN document_id_number VARCHAR(100)")
 	DB.Exec("ALTER TABLE documents ADD COLUMN customer_id VARCHAR(50) REFERENCES customers(id)")
+	DB.Exec("ALTER TABLE documents ADD COLUMN job_id VARCHAR(36)")
 	DB.Exec("ALTER TABLE audit_logs ADD COLUMN actor_id INT REFERENCES users(id)")
 
 	// 2. Rename existing columns to workspace_id where appropriate
@@ -139,6 +141,25 @@ func InitSchema() error {
 	DB.Exec("ALTER TABLE customers RENAME COLUMN user_id TO workspace_id")
 	DB.Exec("ALTER TABLE documents RENAME COLUMN user_id TO workspace_id")
 	DB.Exec("ALTER TABLE audit_logs RENAME COLUMN user_id TO workspace_id")
+
+	// 3. Add extracted_data JSONB column for flexible document extraction storage.
+	// This is the canonical source of truth for all document-type-specific extracted fields.
+	// Legacy columns (person_name, dob, document_id_number) are kept temporarily as
+	// synchronized projections for backward compatibility.
+	DB.Exec("ALTER TABLE documents ADD COLUMN extracted_data JSONB DEFAULT '{}'::jsonb")
+
+	// 4. Backfill existing identity-document rows into extracted_data.
+	// Idempotent: only touches rows where extracted_data is empty and legacy fields exist.
+	DB.Exec(`
+		UPDATE documents
+		SET extracted_data = jsonb_strip_nulls(jsonb_build_object(
+			'person_name', person_name,
+			'dob', dob,
+			'document_id_number', document_id_number
+		))
+		WHERE (extracted_data IS NULL OR extracted_data = '{}'::jsonb)
+		  AND (person_name IS NOT NULL OR dob IS NOT NULL OR document_id_number IS NOT NULL)
+	`)
 
 	log.Println("Database schema initialized")
 	return nil

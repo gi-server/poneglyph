@@ -280,7 +280,7 @@
                 searchQuery: '',
                 customers: [],
                 selectedCustomer: null,
-                file: null,
+                files: [],
                 uploading: false,
                 uploadSuccess: false,
                 uploadError: '',
@@ -305,18 +305,18 @@
 
                 handleDrop(e) {
                     if (e.dataTransfer.files.length > 0) {
-                        this.file = e.dataTransfer.files[0];
+                        this.files = Array.from(e.dataTransfer.files);
                     }
                 },
 
                 handleFileSelect(e) {
                     if (e.target.files.length > 0) {
-                        this.file = e.target.files[0];
+                        this.files = Array.from(e.target.files);
                     }
                 },
 
                 uploadFile() {
-                    if (!this.file) return;
+                    if (this.files.length === 0) return;
                     if (this.customerType === 'existing' && !this.selectedCustomer) {
                         this.uploadError = "Please select an existing customer";
                         return;
@@ -327,7 +327,7 @@
                     this.uploadSuccess = false;
 
                     const formData = new FormData();
-                    formData.append('document', this.file);
+                    this.files.forEach(f => formData.append('documents', f));
                     formData.append('customer_type', this.customerType);
                     if (this.selectedCustomer) {
                         formData.append('customer_id', this.selectedCustomer.id);
@@ -340,7 +340,10 @@
                         .then(res => {
                             if (res.ok) {
                                 this.uploadSuccess = true;
-                                this.file = null;
+                                this.files = [];
+                                if (this.$refs && this.$refs.fileInput) {
+                                    this.$refs.fileInput.value = '';
+                                }
                                 setTimeout(() => {
                                     this.uploadSuccess = false;
                                 }, 3000);
@@ -386,7 +389,14 @@
                 },
 
                 openReviewModal(doc) {
-                    this.reviewDoc = { ...doc };
+                    this.reviewDoc = {
+                        ...doc,
+                        _extracted_data: doc.extracted_data ? { ...doc.extracted_data } : {
+                            person_name: doc.person_name || '',
+                            dob: doc.dob || '',
+                            document_id_number: doc.document_id_number || ''
+                        }
+                    };
                     this.reviewCustomerType = 'new';
                     this.reviewSearchQuery = '';
                     this.reviewSelectedCustomer = null;
@@ -419,10 +429,8 @@
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            person_name: this.reviewDoc.person_name,
                             document_type: this.reviewDoc.document_type,
-                            dob: this.reviewDoc.dob || "",
-                            document_id_number: this.reviewDoc.document_id_number || "",
+                            extracted_data: this.reviewDoc._extracted_data,
                             customer_id: custId
                         })
                     })

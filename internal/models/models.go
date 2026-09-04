@@ -1,6 +1,9 @@
 package models
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 type User struct {
 	ID           int       `json:"id"`
@@ -19,20 +22,23 @@ type Customer struct {
 }
 
 type Document struct {
-	ID               int       `json:"id"`
-	UserID           int       `json:"user_id"`
-	Filename         string    `json:"filename"`
-	Filepath         string    `json:"-"`
-	OriginalName     string    `json:"original_name"`
-	Status           string    `json:"status"` // uploaded, processing, needs_review, completed, failed
-	OCRText          *string   `json:"ocr_text,omitempty"`
-	DocumentType     *string   `json:"document_type,omitempty"`
-	PersonName       *string   `json:"person_name,omitempty"`
-	DOB              *string   `json:"dob,omitempty"`
-	DocumentIDNumber *string   `json:"document_id_number,omitempty"`
-	Confidence       *float64  `json:"confidence,omitempty"`
-	CustomerID       *string   `json:"customer_id,omitempty"`
-	CreatedAt        time.Time `json:"created_at"`
+	ID            int             `json:"id"`
+	UserID        int             `json:"user_id"`
+	Filename      string          `json:"filename"`
+	Filepath      string          `json:"-"`
+	OriginalName  string          `json:"original_name"`
+	Status        string          `json:"status"` // uploaded, processing, needs_review, completed, failed
+	OCRText       *string         `json:"ocr_text,omitempty"`
+	DocumentType  *string         `json:"document_type,omitempty"`
+	ExtractedData json.RawMessage `json:"extracted_data"` // Canonical source of truth for all extracted fields
+	Confidence    *float64        `json:"confidence,omitempty"`
+	CustomerID    *string         `json:"customer_id,omitempty"`
+	CreatedAt     time.Time       `json:"created_at"`
+	// Legacy projection fields — synchronized mirrors of identity-document fields
+	// inside extracted_data. Kept temporarily for backward compatibility.
+	PersonName       *string `json:"person_name,omitempty"`
+	DOB              *string `json:"dob,omitempty"`
+	DocumentIDNumber *string `json:"document_id_number,omitempty"`
 }
 
 type AuditLog struct {
@@ -45,12 +51,16 @@ type AuditLog struct {
 }
 
 type ReviewRequest struct {
-	PersonName       string `json:"person_name"`
-	DocumentType     string `json:"document_type"`
-	DOB              string `json:"dob"`
-	DocumentIDNumber string `json:"document_id_number"`
-	CustomerID       string `json:"customer_id"`
+	DocumentType  string          `json:"document_type"`
+	CustomerID    string          `json:"customer_id"`
+	ExtractedData json.RawMessage `json:"extracted_data"` // Canonical: dynamic fields from the review form
+	// Legacy fields — accepted from older clients for backward compatibility.
+	// If ExtractedData is provided, these are ignored.
+	PersonName       string `json:"person_name,omitempty"`
+	DOB              string `json:"dob,omitempty"`
+	DocumentIDNumber string `json:"document_id_number,omitempty"`
 }
+
 
 type DocumentShare struct {
 	Token      string    `json:"token"`

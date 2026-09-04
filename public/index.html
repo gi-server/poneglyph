@@ -416,16 +416,16 @@
                     </div>
                     
                     <div class="border-2 border-dashed border-gray-200 rounded-xl bg-gray-50 flex flex-col items-center justify-center p-6 relative hover:bg-gray-100 transition" @dragover.prevent @drop.prevent="handleDrop">
-                        <input type="file" x-ref="fileInput" @change="handleFileSelect" class="hidden" accept=".pdf,.jpg,.jpeg,.png">
+                        <input type="file" multiple x-ref="fileInput" @change="handleFileSelect" class="hidden" accept=".pdf,.jpg,.jpeg,.png">
                         <div class="w-24 h-24 bg-purple-100 rounded-xl mb-4 flex items-center justify-center">
                             <svg class="w-12 h-12 text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
                         </div>
-                        <div class="font-bold text-lg mb-1" x-text="file ? file.name : 'Drag & drop your file here'"></div>
-                        <div class="text-gray-500 text-sm mb-4" x-text="file ? (file.size/1024/1024).toFixed(2) + ' MB' : 'PDF, JPG, PNG or scanned documents'"></div>
+                        <div class="font-bold text-lg mb-1" x-text="files.length > 0 ? files.length + ' file(s) selected' : 'Drag & drop your files here'"></div>
+                        <div class="text-gray-500 text-sm mb-4" x-text="files.length > 0 ? (files.reduce((acc, f) => acc + f.size, 0)/1024/1024).toFixed(2) + ' MB total' : 'PDF, JPG, PNG or scanned documents'"></div>
                         
                         <div x-show="!uploading && !uploadSuccess" class="flex gap-2">
-                            <button @click="$refs.fileInput.click()" class="bg-white border border-gray-300 text-gray-700 px-6 py-2 rounded-lg font-medium hover:bg-gray-50 transition" x-show="!file">Choose File</button>
-                            <button @click="uploadFile" x-show="file" class="bg-secondary text-white px-6 py-2 rounded-lg font-medium hover:bg-opacity-90 transition" :disabled="customerType === 'existing' && !selectedCustomer">
+                            <button @click="$refs.fileInput.click()" class="bg-white border border-gray-300 text-gray-700 px-6 py-2 rounded-lg font-medium hover:bg-gray-50 transition">Choose Files</button>
+                            <button @click="uploadFile" x-show="files.length > 0" class="bg-secondary text-white px-6 py-2 rounded-lg font-medium hover:bg-opacity-90 transition" :disabled="customerType === 'existing' && !selectedCustomer">
                                 Upload Document
                             </button>
                         </div>
@@ -958,7 +958,7 @@
                 searchQuery: '',
                 customers: [],
                 selectedCustomer: null,
-                file: null,
+                files: [],
                 uploading: false,
                 uploadSuccess: false,
                 uploadError: '',
@@ -983,18 +983,18 @@
 
                 handleDrop(e) {
                     if (e.dataTransfer.files.length > 0) {
-                        this.file = e.dataTransfer.files[0];
+                        this.files = Array.from(e.dataTransfer.files);
                     }
                 },
 
                 handleFileSelect(e) {
                     if (e.target.files.length > 0) {
-                        this.file = e.target.files[0];
+                        this.files = Array.from(e.target.files);
                     }
                 },
 
                 uploadFile() {
-                    if (!this.file) return;
+                    if (this.files.length === 0) return;
                     if (this.customerType === 'existing' && !this.selectedCustomer) {
                         this.uploadError = "Please select an existing customer";
                         return;
@@ -1005,7 +1005,7 @@
                     this.uploadSuccess = false;
 
                     const formData = new FormData();
-                    formData.append('document', this.file);
+                    this.files.forEach(f => formData.append('documents', f));
                     formData.append('customer_type', this.customerType);
                     if (this.selectedCustomer) {
                         formData.append('customer_id', this.selectedCustomer.id);
