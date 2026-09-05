@@ -28,14 +28,14 @@ func GetDocuments(w http.ResponseWriter, r *http.Request) {
 
 	if role == "admin" {
 		rows, err = database.DB.Query(`
-			SELECT d.id, d.filename, d.original_name, d.status, d.document_type, d.person_name, d.dob, d.document_id_number, d.confidence, d.created_at, d.ocr_text, c.name 
+			SELECT d.id, d.filename, d.original_name, d.status, d.document_type, d.extracted_data, d.person_name, d.dob, d.document_id_number, d.confidence, d.created_at, d.ocr_text, c.name 
 			FROM documents d 
 			LEFT JOIN customers c ON d.customer_id = c.id 
 			ORDER BY d.created_at DESC LIMIT 100
 		`)
 	} else {
 		rows, err = database.DB.Query(`
-			SELECT d.id, d.filename, d.original_name, d.status, d.document_type, d.person_name, d.dob, d.document_id_number, d.confidence, d.created_at, d.ocr_text, c.name 
+			SELECT d.id, d.filename, d.original_name, d.status, d.document_type, d.extracted_data, d.person_name, d.dob, d.document_id_number, d.confidence, d.created_at, d.ocr_text, c.name 
 			FROM documents d 
 			LEFT JOIN customers c ON d.customer_id = c.id 
 			WHERE d.workspace_id = $1
@@ -59,7 +59,7 @@ func GetDocuments(w http.ResponseWriter, r *http.Request) {
 		var doc DocumentWithCustomer
 		if err := rows.Scan(
 			&doc.ID, &doc.Filename, &doc.OriginalName, &doc.Status,
-			&doc.DocumentType, &doc.PersonName, &doc.DOB, &doc.DocumentIDNumber, &doc.Confidence, &doc.CreatedAt, &doc.OCRText, &doc.CustomerName,
+			&doc.DocumentType, &doc.ExtractedData, &doc.PersonName, &doc.DOB, &doc.DocumentIDNumber, &doc.Confidence, &doc.CreatedAt, &doc.OCRText, &doc.CustomerName,
 		); err != nil {
 			http.Error(w, "Failed to parse document", http.StatusInternalServerError)
 			return

@@ -6,6 +6,25 @@ Designed for environments where document confidentiality is non-negotiable, Docu
 
 ---
 
+## 🚀 How to Run the Application
+
+The easiest way to run the entire stack (Poneglyph + Great Sage) on Windows is using the provided `start.ps1` orchestrator script. 
+
+1. Ensure **PostgreSQL** is running (`docker-compose up -d`)
+2. Ensure **Ollama** is running locally
+3. Open a PowerShell terminal in this directory and run:
+   ```powershell
+   .\start.ps1
+   ```
+4. Access the web app at [http://localhost:8080](http://localhost:8080) (Default login: `admin` / `admin`)
+5. In a separate terminal, start Great Sage:
+   ```powershell
+   cd ..\great-sage
+   uvicorn app.main:app --host 127.0.0.1 --port 8000
+   ```
+
+---
+
 ## Core Capabilities
 
 - **Local OCR**: Extracts text from PDFs and images locally using PyMuPDF and Tesseract. Very fast and lightweight (no heavy PyTorch models required).

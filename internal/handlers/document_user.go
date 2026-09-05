@@ -131,7 +131,7 @@ func GetCustomerDocuments(w http.ResponseWriter, r *http.Request) {
 
 	if role == "admin" {
 		rows, err = database.DB.Query(`
-			SELECT id, original_name, status, document_type, person_name, dob, document_id_number, created_at, ocr_text 
+			SELECT id, original_name, status, document_type, extracted_data, person_name, dob, document_id_number, created_at, ocr_text 
 			FROM documents 
 			WHERE customer_id = $1
 			ORDER BY created_at DESC
@@ -139,7 +139,7 @@ func GetCustomerDocuments(w http.ResponseWriter, r *http.Request) {
 		`, customerID)
 	} else {
 		rows, err = database.DB.Query(`
-			SELECT id, original_name, status, document_type, person_name, dob, document_id_number, created_at, ocr_text 
+			SELECT id, original_name, status, document_type, extracted_data, person_name, dob, document_id_number, created_at, ocr_text 
 			FROM documents 
 			WHERE customer_id = $1
 			ORDER BY created_at DESC
@@ -156,7 +156,7 @@ func GetCustomerDocuments(w http.ResponseWriter, r *http.Request) {
 	var documents []models.Document
 	for rows.Next() {
 		var doc models.Document
-		if err := rows.Scan(&doc.ID, &doc.OriginalName, &doc.Status, &doc.DocumentType, &doc.PersonName, &doc.DOB, &doc.DocumentIDNumber, &doc.CreatedAt, &doc.OCRText); err != nil {
+		if err := rows.Scan(&doc.ID, &doc.OriginalName, &doc.Status, &doc.DocumentType, &doc.ExtractedData, &doc.PersonName, &doc.DOB, &doc.DocumentIDNumber, &doc.CreatedAt, &doc.OCRText); err != nil {
 			http.Error(w, "Failed to scan document", http.StatusInternalServerError)
 			return
 		}

@@ -45,6 +45,7 @@ func main() {
 
 	// Internal service-to-service routes (authenticated via X-Webhook-Secret, not JWT)
 	api.HandleFunc("/internal/webhook/analyze", handlers.AnalyzeWebhook).Methods("POST")
+	api.HandleFunc("/internal/webhook/jobs", handlers.JobWebhook).Methods("POST")
 
 	// Protected routes
 	protected := api.PathPrefix("/").Subrouter()

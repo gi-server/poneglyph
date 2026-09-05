@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -72,29 +73,9 @@ func UploadDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	file, handler, err := r.FormFile("document")
-	if err != nil {
-		http.Error(w, "Error retrieving the file", http.StatusBadRequest)
-		return
-	}
-	defer file.Close()
-
-	// MIME Validation: read first 512 bytes to determine real content type
-	buffer := make([]byte, 512)
-	n, err := file.Read(buffer)
-	if err != nil && err != io.EOF {
-		http.Error(w, "Failed to read file", http.StatusBadRequest)
-		return
-	}
-	buffer = buffer[:n]
-	if _, err := file.Seek(0, 0); err != nil {
-		http.Error(w, "Failed to process file", http.StatusInternalServerError)
-		return
-	}
-
-	contentType := http.DetectContentType(buffer)
-	if contentType != "application/pdf" && contentType != "image/jpeg" && contentType != "image/png" {
-		http.Error(w, "Invalid file type. Only PDF, JPEG, and PNG are accepted.", http.StatusBadRequest)
+	files := r.MultipartForm.File["documents"]
+	if len(files) == 0 {
+		http.Error(w, "No documents provided", http.StatusBadRequest)
 		return
 	}
 
@@ -133,79 +114,125 @@ func UploadDocument(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Save file — extension is derived from MIME type, never from user-supplied filename
-	newFilename, filePath, err := storage.SaveFile(file, contentType)
-	if err != nil {
-		log.Printf("Failed to save uploaded file: %v", err)
-		http.Error(w, "Failed to save file", http.StatusInternalServerError)
+	var docInfos []services.DocumentInfo
+	var docIDs []int
+
+	for _, handler := range files {
+		file, err := handler.Open()
+		if err != nil {
+			log.Printf("Failed to open uploaded file: %v", err)
+			continue
+		}
+		
+		// MIME Validation: read first 512 bytes to determine real content type
+		buffer := make([]byte, 512)
+		n, err := file.Read(buffer)
+		if err != nil && err != io.EOF {
+			file.Close()
+			continue
+		}
+		buffer = buffer[:n]
+		if _, err := file.Seek(0, 0); err != nil {
+			file.Close()
+			continue
+		}
+
+		contentType := http.DetectContentType(buffer)
+		if contentType != "application/pdf" && contentType != "image/jpeg" && contentType != "image/png" {
+			file.Close()
+			continue // Skip invalid file types
+		}
+
+		// Save file
+		newFilename, filePath, err := storage.SaveFile(file, contentType)
+		file.Close()
+		if err != nil {
+			log.Printf("Failed to save uploaded file: %v", err)
+			continue
+		}
+
+		// Use the sanitized original filename for display only
+		originalName := handler.Filename
+		if len(originalName) > 255 {
+			originalName = originalName[:255]
+		}
+
+		var docID int
+		var cID *string
+		if customerType == "existing" {
+			cID = &customerID
+		}
+
+		query := `INSERT INTO documents (workspace_id, filename, filepath, original_name, status, customer_id) 
+				  VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`
+		err = database.DB.QueryRow(query, workspaceID, newFilename, filePath, originalName, "uploaded", cID).Scan(&docID)
+		if err != nil {
+			os.Remove(filePath)
+			log.Printf("Failed to create document record: %v", err)
+			continue
+		}
+
+		// Log the upload event
+		userID := r.Context().Value(UserIDKey).(int)
+		LogEvent(workspaceID, userID, "document_uploaded", map[string]interface{}{
+			"document_id": docID,
+			"filename":    originalName,
+		})
+
+		docInfos = append(docInfos, services.DocumentInfo{
+			ID:       docID,
+			FilePath: filePath,
+		})
+		docIDs = append(docIDs, docID)
+	}
+
+	if len(docInfos) == 0 {
+		http.Error(w, "No valid documents were uploaded", http.StatusBadRequest)
 		return
 	}
 
-	// Use the sanitized original filename for display only (never for storage)
-	originalName := handler.Filename
-	if len(originalName) > 255 {
-		originalName = originalName[:255]
-	}
-
-	var docID int
-	var cID *string
-	if customerType == "existing" {
-		cID = &customerID
-	}
-
-	query := `INSERT INTO documents (workspace_id, filename, filepath, original_name, status, customer_id) 
-	          VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`
-	err = database.DB.QueryRow(query, workspaceID, newFilename, filePath, originalName, "uploaded", cID).Scan(&docID)
-	if err != nil {
-		// Clean up the saved file if we couldn't create the DB record
-		os.Remove(filePath)
-		log.Printf("Failed to create document record: %v", err)
-		http.Error(w, "Failed to create database record", http.StatusInternalServerError)
-		return
-	}
-
-	// Log the upload event
-	userID := r.Context().Value(UserIDKey).(int)
-	LogEvent(workspaceID, userID, "document_uploaded", map[string]interface{}{
-		"document_id": docID,
-		"filename":    originalName,
-	})
-
-	// Submit the document to Great Sage for asynchronous OCR + AI processing.
-	// The goroutine updates the status to "processing" on success or "failed" on error.
-	go sendToGreatSage(docID, filePath)
+	// Submit the batch of documents to Great Sage's V2 API
+	sendJobToGreatSage(docInfos)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"message": "File uploaded successfully",
-		"id":      docID,
+		"message": fmt.Sprintf("%d files uploaded successfully", len(docIDs)),
+		"ids":     docIDs,
 	})
 }
 
-// sendToGreatSage submits a document to the Great Sage intelligence service
-// for asynchronous OCR and AI classification processing.
-//
-// On successful submission (HTTP 202), the document status is set to "processing".
-// On failure, the document status is set to "failed" to prevent it from being
-// permanently stuck.
-func sendToGreatSage(docID int, filePath string) {
+// sendJobToGreatSage submits a batch of documents to Great Sage
+// for asynchronous OCR and AI classification processing using V2 APIs.
+func sendJobToGreatSage(docs []services.DocumentInfo) {
 	client, err := services.NewGreatSageClient()
 	if err != nil {
-		log.Printf("Document %d: Great Sage client error: %v", docID, err)
-		database.DB.Exec("UPDATE documents SET status = 'failed' WHERE id = $1", docID)
+		log.Printf("Great Sage client error: %v", err)
+		for _, doc := range docs {
+			database.DB.Exec("UPDATE documents SET status = 'failed' WHERE id = $1", doc.ID)
+		}
 		return
 	}
 
-	err = client.SubmitDocument(docID, filePath)
+	webhookURL := os.Getenv("API_BASE_URL")
+	if webhookURL == "" {
+		webhookURL = "http://backend:8080" // default for local docker
+	}
+	webhookURL = webhookURL + "/api/internal/webhook/jobs"
+
+	jobID, err := client.SubmitJob(docs, webhookURL)
 	if err != nil {
-		log.Printf("Document %d: failed to submit to Great Sage: %v", docID, err)
-		database.DB.Exec("UPDATE documents SET status = 'failed' WHERE id = $1", docID)
+		log.Printf("Failed to submit job to Great Sage: %v", err)
+		for _, doc := range docs {
+			database.DB.Exec("UPDATE documents SET status = 'failed' WHERE id = $1", doc.ID)
+		}
 		return
 	}
 
-	// Great Sage accepted the document — mark as processing
-	_, err = database.DB.Exec("UPDATE documents SET status = 'processing' WHERE id = $1", docID)
-	if err != nil {
-		log.Printf("Document %d: failed to update status to processing: %v", docID, err)
+	// Job submitted — mark all as processing and store the job ID
+	for _, doc := range docs {
+		_, err = database.DB.Exec("UPDATE documents SET status = 'processing', job_id = $1 WHERE id = $2", jobID, doc.ID)
+		if err != nil {
+			log.Printf("Document %d: failed to update status to processing: %v", doc.ID, err)
+		}
 	}
 }

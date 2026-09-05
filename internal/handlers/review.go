@@ -12,6 +12,18 @@ import (
 	"github.com/gorilla/mux"
 )
 
+// resolveCustomerName extracts a suitable customer display name from extracted_data.
+// It checks for the most likely entity name field depending on document type:
+// person_name (identity docs), vendor (invoices), merchant (receipts).
+func resolveCustomerName(extractedData map[string]interface{}) string {
+	for _, key := range []string{"person_name", "vendor", "merchant"} {
+		if v, ok := extractedData[key].(string); ok && v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 func ConfirmDocument(w http.ResponseWriter, r *http.Request) {
 	workspaceID, _ := r.Context().Value(WorkspaceIDKey).(int)
 	userID, ok := r.Context().Value(UserIDKey).(int)
@@ -61,20 +73,8 @@ func ConfirmDocument(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Input validation
-	if len(req.PersonName) == 0 || len(req.PersonName) > 255 {
-		http.Error(w, "Person name must be between 1 and 255 characters", http.StatusBadRequest)
-		return
-	}
 	if len(req.DocumentType) == 0 || len(req.DocumentType) > 100 {
 		http.Error(w, "Document type must be between 1 and 100 characters", http.StatusBadRequest)
-		return
-	}
-	if len(req.DOB) > 50 {
-		http.Error(w, "DOB must be under 50 characters", http.StatusBadRequest)
-		return
-	}
-	if len(req.DocumentIDNumber) > 100 {
-		http.Error(w, "Document ID Number must be under 100 characters", http.StatusBadRequest)
 		return
 	}
 	if len(req.CustomerID) > 50 {
@@ -82,15 +82,60 @@ func ConfirmDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Resolve extracted_data: prefer canonical ExtractedData, fall back to legacy fields
+	var extractedMap map[string]interface{}
+	if len(req.ExtractedData) > 0 {
+		if err := json.Unmarshal(req.ExtractedData, &extractedMap); err != nil {
+			http.Error(w, "Invalid extracted_data JSON", http.StatusBadRequest)
+			return
+		}
+	} else {
+		// Legacy fallback: build extracted_data from old fields
+		extractedMap = make(map[string]interface{})
+		if req.PersonName != "" {
+			extractedMap["person_name"] = req.PersonName
+		}
+		if req.DOB != "" {
+			extractedMap["dob"] = req.DOB
+		}
+		if req.DocumentIDNumber != "" {
+			extractedMap["document_id_number"] = req.DocumentIDNumber
+		}
+	}
+
+	extractedJSON, err := json.Marshal(extractedMap)
+	if err != nil {
+		http.Error(w, "Failed to serialize extracted data", http.StatusInternalServerError)
+		return
+	}
+
+	// Project legacy columns from extracted_data (single source of truth)
+	var personName, dob, docIDNumber *string
+	if v, ok := extractedMap["person_name"].(string); ok {
+		personName = &v
+	}
+	if v, ok := extractedMap["dob"].(string); ok {
+		dob = &v
+	}
+	if v, ok := extractedMap["document_id_number"].(string); ok {
+		docIDNumber = &v
+	}
+
+	// Determine customer name for new customer creation
+	customerName := resolveCustomerName(extractedMap)
+	if customerName == "" {
+		customerName = "Customer"
+	}
+
 	finalCustomerID := req.CustomerID
 
 	if finalCustomerID == "new" || finalCustomerID == "" {
 		// Create a new customer using a cryptographic UUID from the DB serial
-		// The name is user-provided, not AI-provided — user has already verified it
+		// The name is derived from extracted_data — user has already verified it
 		var newID string
 		err = database.DB.QueryRow(
 			"INSERT INTO customers (id, workspace_id, name) VALUES (gen_random_uuid()::text, $1, $2) RETURNING id",
-			workspaceID, req.PersonName,
+			workspaceID, customerName,
 		).Scan(&newID)
 		if err != nil {
 			log.Printf("Failed to create new customer: %v", err)
@@ -114,15 +159,15 @@ func ConfirmDocument(w http.ResponseWriter, r *http.Request) {
 	if role == "admin" {
 		_, err = database.DB.Exec(`
 			UPDATE documents 
-			SET document_type = $1, person_name = $2, dob = $3, document_id_number = $4, customer_id = $5, status = 'completed'
-			WHERE id = $6
-		`, req.DocumentType, req.PersonName, req.DOB, req.DocumentIDNumber, finalCustomerID, docID)
+			SET document_type = $1, extracted_data = $2, person_name = $3, dob = $4, document_id_number = $5, customer_id = $6, status = 'completed'
+			WHERE id = $7
+		`, req.DocumentType, extractedJSON, personName, dob, docIDNumber, finalCustomerID, docID)
 	} else {
 		_, err = database.DB.Exec(`
 			UPDATE documents 
-			SET document_type = $1, person_name = $2, dob = $3, document_id_number = $4, customer_id = $5, status = 'completed'
-			WHERE id = $6 AND workspace_id = $7
-		`, req.DocumentType, req.PersonName, req.DOB, req.DocumentIDNumber, finalCustomerID, docID, workspaceID)
+			SET document_type = $1, extracted_data = $2, person_name = $3, dob = $4, document_id_number = $5, customer_id = $6, status = 'completed'
+			WHERE id = $7 AND workspace_id = $8
+		`, req.DocumentType, extractedJSON, personName, dob, docIDNumber, finalCustomerID, docID, workspaceID)
 	}
 	if err != nil {
 		log.Printf("Failed to update document %d: %v", docID, err)
@@ -130,14 +175,12 @@ func ConfirmDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Audit log — record the human review action
+	// Audit log — record the human review action with canonical extracted_data
 	LogEvent(workspaceID, userID, "confirm_ai_review", map[string]interface{}{
-		"document_id":        docID,
-		"person_name":        req.PersonName,
-		"document_type":      req.DocumentType,
-		"dob":                req.DOB,
-		"document_id_number": req.DocumentIDNumber,
-		"customer_id":        finalCustomerID,
+		"document_id":    docID,
+		"document_type":  req.DocumentType,
+		"extracted_data": extractedMap,
+		"customer_id":    finalCustomerID,
 	})
 
 	w.Header().Set("Content-Type", "application/json")
