@@ -3,12 +3,15 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
-	"docunest/internal/database"
-	"docunest/internal/models"
+	"poneglyph/internal/database"
+	"poneglyph/internal/models"
 
 	"github.com/alexedwards/argon2id"
 	"github.com/gorilla/mux"
@@ -176,4 +179,70 @@ func ResetPassword(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"message": "Password reset successfully"})
+}
+
+// WipeDatabase deletes all jobs data, audit logs, and removes uploaded job folders from disk.
+// The caller must supply {"confirmation": "wipe my data"} in the request body.
+func WipeDatabase(w http.ResponseWriter, r *http.Request) {
+	adminID, ok := r.Context().Value(UserIDKey).(int)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Require an explicit confirmation phrase in the body
+	r.Body = http.MaxBytesReader(w, r.Body, 512)
+	var body struct {
+		Confirmation string `json:"confirmation"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+		return
+	}
+	if body.Confirmation != "wipe my data" {
+		http.Error(w, "Confirmation phrase did not match", http.StatusBadRequest)
+		return
+	}
+
+	// Ensure this is an admin
+	var user models.User
+	err := database.GetCollection("users").FindOne(r.Context(), bson.M{"id": adminID}).Decode(&user)
+	if err != nil || user.Role != "admin" {
+		http.Error(w, "Forbidden: Only admins can wipe data", http.StatusForbidden)
+		return
+	}
+
+	ctx := r.Context()
+	// 1. Delete MongoDB collections data
+	if database.DB != nil {
+		database.GetCollection("jobs").DeleteMany(ctx, bson.M{})
+		database.GetCollection("audit_logs").DeleteMany(ctx, bson.M{})
+	}
+
+	// 2. Clean uploads directory
+	uploadBaseDir := os.Getenv("UPLOAD_DIR")
+	if uploadBaseDir == "" {
+		uploadBaseDir = "./uploads"
+	}
+
+	deletedFolders := 0
+	if entries, err := os.ReadDir(uploadBaseDir); err == nil {
+		for _, entry := range entries {
+			fullPath := filepath.Join(uploadBaseDir, entry.Name())
+			if err := os.RemoveAll(fullPath); err == nil {
+				deletedFolders++
+			} else {
+				log.Printf("WipeDatabase: could not remove %s: %v", fullPath, err)
+			}
+		}
+	}
+
+	log.Printf("WipeDatabase: System wiped by admin %d — %d job folders removed from disk", adminID, deletedFolders)
+	LogEvent(adminID, adminID, "data_wipe_completed", map[string]interface{}{"folders_deleted": deletedFolders})
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"message":         "All job records and uploaded files have been permanently deleted",
+		"folders_deleted": deletedFolders,
+	})
 }

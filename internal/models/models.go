@@ -1,7 +1,6 @@
 package models
 
 import (
-	"encoding/json"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -18,36 +17,6 @@ type User struct {
 	CreatedAt    time.Time          `json:"created_at" bson:"created_at"`
 }
 
-type Customer struct {
-	MongoID     primitive.ObjectID `json:"-" bson:"_id,omitempty"`
-	ID          string             `json:"id" bson:"id"`
-	WorkspaceID int                `json:"user_id" bson:"workspace_id"`
-	Name        string             `json:"name" bson:"name"`
-	CreatedAt   time.Time          `json:"created_at" bson:"created_at"`
-}
-
-type Document struct {
-	MongoID       primitive.ObjectID `json:"-" bson:"_id,omitempty"`
-	ID            int                `json:"id" bson:"id"`
-	WorkspaceID   int                `json:"user_id" bson:"workspace_id"`
-	Filename      string             `json:"filename" bson:"filename"`
-	Filepath      string             `json:"-" bson:"filepath"`
-	OriginalName  string             `json:"original_name" bson:"original_name"`
-	Status        string             `json:"status" bson:"status"` // uploaded, processing, needs_review, completed, failed
-	OCRText       *string            `json:"ocr_text,omitempty" bson:"ocr_text,omitempty"`
-	DocumentType  *string            `json:"document_type,omitempty" bson:"document_type,omitempty"`
-	ExtractedData json.RawMessage    `json:"extracted_data" bson:"extracted_data"` // Canonical source of truth for all extracted fields
-	Confidence    *float64           `json:"confidence,omitempty" bson:"confidence,omitempty"`
-	CustomerID    *string            `json:"customer_id,omitempty" bson:"customer_id,omitempty"`
-	JobID         *string            `json:"job_id,omitempty" bson:"job_id,omitempty"`
-	CreatedAt     time.Time          `json:"created_at" bson:"created_at"`
-	// Legacy projection fields — synchronized mirrors of identity-document fields
-	// inside extracted_data. Kept temporarily for backward compatibility.
-	PersonName       *string `json:"person_name,omitempty" bson:"person_name,omitempty"`
-	DOB              *string `json:"dob,omitempty" bson:"dob,omitempty"`
-	DocumentIDNumber *string `json:"document_id_number,omitempty" bson:"document_id_number,omitempty"`
-}
-
 type AuditLog struct {
 	MongoID     primitive.ObjectID `json:"-" bson:"_id,omitempty"`
 	ID          int                `json:"id" bson:"id"`
@@ -59,24 +28,14 @@ type AuditLog struct {
 	CreatedAt   time.Time          `json:"created_at" bson:"created_at"`
 }
 
-type ReviewRequest struct {
-	DocumentType  string          `json:"document_type"`
-	CustomerID    string          `json:"customer_id"`
-	ExtractedData json.RawMessage `json:"extracted_data"` // Canonical: dynamic fields from the review form
-	// Legacy fields — accepted from older clients for backward compatibility.
-	// If ExtractedData is provided, these are ignored.
-	PersonName       string `json:"person_name,omitempty"`
-	DOB              string `json:"dob,omitempty"`
-	DocumentIDNumber string `json:"document_id_number,omitempty"`
+type JobFile struct {
+	Filename string `json:"filename" bson:"filename"`
+	Size     int64  `json:"size" bson:"size"`
+	MimeType string `json:"mime_type,omitempty" bson:"mime_type,omitempty"`
 }
 
-type DocumentShare struct {
-	MongoID    primitive.ObjectID `json:"-" bson:"_id,omitempty"`
-	Token      string             `json:"token" bson:"token"`
-	DocumentID int                `json:"document_id" bson:"document_id"`
-	ExpiresAt  time.Time          `json:"expires_at" bson:"expires_at"`
-	SingleUse  bool               `json:"single_use" bson:"single_use"`
-	IsRevoked  bool               `json:"is_revoked" bson:"is_revoked"`
-	CreatedAt  time.Time          `json:"created_at" bson:"created_at"`
+type Job struct {
+	ID         primitive.ObjectID `json:"id" bson:"_id,omitempty"`
+	UploadedAt time.Time          `json:"uploaded_at" bson:"uploaded_at"`
+	Files      []JobFile          `json:"files" bson:"files"`
 }
-

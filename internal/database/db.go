@@ -104,69 +104,29 @@ func InitSchema() error {
 		return fmt.Errorf("failed to create users indexes: %w", err)
 	}
 
-	// 2. Customers Indexes
-	customersColl := DB.Collection("customers")
-	_, err = customersColl.Indexes().CreateMany(ctx, []mongo.IndexModel{
+	// 2. Jobs Indexes
+	jobsColl := DB.Collection("jobs")
+	_, err = jobsColl.Indexes().CreateMany(ctx, []mongo.IndexModel{
 		{
-			Keys:    bson.D{{Key: "id", Value: 1}},
-			Options: options.Index().SetUnique(true),
-		},
-		{
-			Keys: bson.D{{Key: "workspace_id", Value: 1}, {Key: "name", Value: 1}},
+			Keys: bson.D{{Key: "uploaded_at", Value: -1}},
 		},
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create customers indexes: %w", err)
+		return fmt.Errorf("failed to create jobs indexes: %w", err)
 	}
 
-	// 3. Documents Indexes
-	documentsColl := DB.Collection("documents")
-	_, err = documentsColl.Indexes().CreateMany(ctx, []mongo.IndexModel{
-		{
-			Keys:    bson.D{{Key: "id", Value: 1}},
-			Options: options.Index().SetUnique(true),
-		},
-		{
-			Keys: bson.D{{Key: "workspace_id", Value: 1}, {Key: "created_at", Value: -1}},
-		},
-		{
-			Keys: bson.D{{Key: "customer_id", Value: 1}},
-		},
-		{
-			Keys: bson.D{{Key: "job_id", Value: 1}},
-		},
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create documents indexes: %w", err)
-	}
-
-	// 4. Audit Logs Indexes
+	// 3. Audit Logs Indexes
 	auditColl := DB.Collection("audit_logs")
 	_, err = auditColl.Indexes().CreateMany(ctx, []mongo.IndexModel{
 		{
-			Keys: bson.D{{Key: "workspace_id", Value: 1}, {Key: "created_at", Value: -1}},
+			Keys: bson.D{{Key: "created_at", Value: -1}},
 		},
 		{
-			Keys: bson.D{{Key: "document_id", Value: 1}},
+			Keys: bson.D{{Key: "actor_id", Value: 1}},
 		},
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create audit_logs indexes: %w", err)
-	}
-
-	// 5. Document Shares Indexes
-	sharesColl := DB.Collection("document_shares")
-	_, err = sharesColl.Indexes().CreateMany(ctx, []mongo.IndexModel{
-		{
-			Keys:    bson.D{{Key: "token", Value: 1}},
-			Options: options.Index().SetUnique(true),
-		},
-		{
-			Keys: bson.D{{Key: "document_id", Value: 1}},
-		},
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create document_shares indexes: %w", err)
 	}
 
 	log.Println("MongoDB schema and indexes successfully initialized")

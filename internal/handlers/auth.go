@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"docunest/internal/database"
-	"docunest/internal/models"
+	"poneglyph/internal/database"
+	"poneglyph/internal/models"
 
 	"github.com/alexedwards/argon2id"
 	"github.com/golang-jwt/jwt/v5"
@@ -193,6 +193,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 	clientIP := r.RemoteAddr
 
 	if !checkLoginRateLimit(clientIP) {
+		log.Printf("[AUTH] REJECTED: Login rate limit exceeded for %s", clientIP)
 		http.Error(w, "Too many failed attempts. Please wait 15 minutes.", http.StatusTooManyRequests)
 		return
 	}
@@ -204,8 +205,11 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Printf("[AUTH] Login attempt for username='%s' from %s", creds.Username, clientIP)
+
 	// Validate input lengths to prevent oversized payloads
 	if len(creds.Username) == 0 || len(creds.Username) > 50 || len(creds.Password) == 0 || len(creds.Password) > 128 {
+		log.Printf("[AUTH] FAILED: Username or password payload size invalid from %s", clientIP)
 		http.Error(w, "Invalid username or password", http.StatusUnauthorized)
 		return
 	}
@@ -217,14 +221,17 @@ func Login(w http.ResponseWriter, r *http.Request) {
 			// Use constant-time comparison path (avoid timing oracle: still call ComparePasswordAndHash)
 			argon2id.ComparePasswordAndHash(creds.Password, "$argon2id$v=19$m=65536,t=1,p=2$deadbeef$deadbeef")
 			recordFailedLogin(clientIP)
+			log.Printf("[AUTH] FAILED: User '%s' not found (IP: %s)", creds.Username, clientIP)
 			http.Error(w, "Invalid username or password", http.StatusUnauthorized)
 			return
 		}
+		log.Printf("[AUTH] ERROR: Database error looking up '%s': %v", creds.Username, err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	if user.IsDisabled {
+		log.Printf("[AUTH] REJECTED: User account '%s' is disabled (IP: %s)", creds.Username, clientIP)
 		http.Error(w, "Account is disabled", http.StatusForbidden)
 		return
 	}
@@ -232,6 +239,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 	match, err := argon2id.ComparePasswordAndHash(creds.Password, user.PasswordHash)
 	if err != nil || !match {
 		recordFailedLogin(clientIP)
+		log.Printf("[AUTH] FAILED: Incorrect password for user '%s' (IP: %s)", creds.Username, clientIP)
 		http.Error(w, "Invalid username or password", http.StatusUnauthorized)
 		return
 	}
@@ -251,6 +259,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	tokenString, err := token.SignedString(jwtKey)
 	if err != nil {
+		log.Printf("[AUTH] ERROR: Failed to sign JWT token for '%s': %v", creds.Username, err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -265,12 +274,15 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 	})
 
+	log.Printf("[AUTH] SUCCESS: User '%s' (ID: %d, Role: %s) logged in successfully from %s", user.Username, user.ID, user.Role, clientIP)
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"message": "Login successful"})
 }
 
 // Logout invalidates the session by expiring the cookie.
 func Logout(w http.ResponseWriter, r *http.Request) {
+	log.Printf("[AUTH] Logout request from %s", r.RemoteAddr)
 	http.SetCookie(w, &http.Cookie{
 		Name:     "token",
 		Value:    "",

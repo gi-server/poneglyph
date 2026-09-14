@@ -1,154 +1,136 @@
-# DocuNest
+# Poneglyph
 
-DocuNest is a private, local-first document organization platform. It automatically scans, reads, classifies, and catalogs documents for individual customers without sending any sensitive data to external cloud services.
-
-Designed for environments where document confidentiality is non-negotiable, DocuNest combines local OCR, on-device AI, and human-in-the-loop review to ensure reliable, zero-leakage records management.
+Poneglyph is a high-speed batch document ingestion system built with a **Go backend** and a **Vite + React + Tailwind CSS v4 frontend**. It features real-time terminal logging, automated disk storage organized by MongoDB native `ObjectId`, strict file limit validations, and standalone single-executable binary packaging.
 
 ---
 
-## 🚀 How to Run the Application
+## 🔄 Ingestion Pipeline & Ecosystem
 
-The easiest way to run the entire stack (Poneglyph + Great Sage) on Windows is using the provided `start.ps1` orchestrator script. 
+Poneglyph serves as the high-throughput document ingestion and validation gateway. Once files are validated and registered by Poneglyph, they can be processed by downstream document intelligence services:
 
-1. Ensure **MongoDB** is running (`docker-compose up -d`)
-2. Ensure **Ollama** is running locally
-3. Open a PowerShell terminal in this directory and run:
-   ```powershell
-   .\start.ps1
-   ```
-4. Access the web app at [http://localhost:8080](http://localhost:8080) (Default login: `admin` / `admin`)
-5. In a separate terminal, start Great Sage:
-   ```powershell
-   cd ..\great-sage
-   uvicorn app.main:app --host 127.0.0.1 --port 8000
-   ```
-
----
-
-## Core Capabilities
-
-- **Local OCR**: Extracts text from PDFs and images locally using PyMuPDF and Tesseract. Very fast and lightweight (no heavy PyTorch models required).
-- **On-Device AI Classification**: Communicates with local language models via Ollama to determine document categories (Aadhaar, PAN, Passport, Invoice, etc.) and extract customer names.
-- **Human-in-the-Loop Review**: Enforces a "Needs Review" state where staff members verify AI extraction before files are committed to customer profiles.
-- **Customer Dossiers & In-App Viewer**: Expandable profiles with a secure, embedded document viewer.
-- **Data Wiper (Danger Zone)**: Fully authenticated, transactional hard-delete functionality to instantly erase a user's entire footprint (customers, documents, and disk files).
-
----
-
-## Security & Privacy
-
-DocuNest is built to strict security standards:
-- **Authentication**: Argon2id password hashing, strict brute-force protection (IP lockout after 10 failed attempts), and secure HttpOnly cookies.
-- **Upload Hardening**: File types are verified via binary MIME inspection. Files are stored using cryptographic UUIDs to prevent path traversal.
-- **Multi-Tenant DB Isolation**: Strict `workspace_id` scoping across all MongoDB collections.
-- **Audit Logging**: Every AI confirmation and manual file mapping is recorded.
-
----
-
-## Architecture
-
-DocuNest consists of two independent services:
-
-1. **DocuNest (Poneglyph)**: The core application — Go API server managing sessions, file handling, DB orchestration, users, customers, and human review workflows.
-2. **Great Sage**: An independent document intelligence engine responsible for OCR, AI classification, and structured metadata extraction. It runs as a separate Python/FastAPI service.
-
-### System Flow Diagram
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant GoAPI as Poneglyph (Go API)
-    participant GS as Great Sage (Python)
-    participant DB as MongoDB
-
-    User->>GoAPI: Upload Document (PDF/Image)
-    GoAPI->>DB: Save metadata (status: uploaded)
-    GoAPI->>GS: POST /api/v1/analyze (file + document_id)
-    GS-->>GoAPI: 202 Accepted
-    GoAPI->>DB: Update status: processing
-    Note over GS: Background: OCR → Tesseract → Ollama/qwen2.5
-    GS->>GoAPI: POST /api/internal/webhook/analyze (result)
-    GoAPI->>DB: Save OCR text + classification (status: needs_review)
-    GoAPI-->>User: Document ready for manual review
-    User->>GoAPI: Confirm/Edit AI Extraction
-    GoAPI->>DB: Map to Customer (status: completed)
+```
+[ Client / Web UI ]
+        │
+        ▼ (Multipart Batch Ingestion: <= 10 files, <= 25MB each)
+[ Poneglyph ] ──► Stores in ./uploads/<ObjectId>/ & Registers MongoDB Job
+        │
+        ▼ (Ingestion Pipeline)
+[ Great Sage ] ──► AI Document Intelligence & Extraction
 ```
 
-### Service Boundaries
-
-| Responsibility | Owner |
-|---|---|
-| Users, auth, sessions | Poneglyph |
-| Customers, MongoDB | Poneglyph |
-| Document storage, sharing | Poneglyph |
-| Human review, audit logs | Poneglyph |
-| Frontend | Poneglyph |
-| OCR, Tesseract | Great Sage |
-| Ollama, qwen2.5 | Great Sage |
-| AI classification | Great Sage |
-| Structured extraction | Great Sage |
-
-Great Sage has **no direct access** to Poneglyph's database.
-
-### Other Components
-
-- **Frontend**: Single-page app built with Tailwind CSS and Alpine.js (zero build step).
-- **Data Layer (MongoDB)**: Document-oriented collection storage.
+> **Downstream Project**: [gi-server/great-sage](https://github.com/gi-server/great-sage) handles document extraction and AI intelligence. Poneglyph operates independently as the intake and storage gateway.
 
 ---
 
-## Quick Start (Windows)
+## 🛠️ Required Downloads & Prerequisites
 
-**Prerequisites**: 
-- Go 1.21+
-- Python 3.10+ 
-- MongoDB (or Docker)
-- Ollama (Ensure the `qwen2.5` model is pulled: `ollama pull qwen2.5`)
-- Tesseract OCR (install via `winget install UB-Mannheim.TesseractOCR`)
-- Great Sage running on port 8000
+Ensure you have the following installed before running the project:
 
-**Exact Ready-to-Go Commands**:
-
-1. Start your local MongoDB database via Docker:
-   ```bash
-   docker-compose up -d
-   ```
-2. Set up and start Great Sage (in a separate terminal):
-   ```bash
-   cd ..\great-sage
-   pip install -r requirements.txt
-   uvicorn app.main:app --host 127.0.0.1 --port 8000
-   ```
-3. Pull the required AI model for Ollama:
-   ```bash
-   ollama pull qwen2.5
-   ```
-4. Run the master orchestrator script (starts the Go Backend):
-   ```powershell
-   .\start.ps1
-   ```
-5. Open your browser and navigate to `http://localhost:8080`. 
-   - **Default Login**: `admin` / `admin` (You should change this in production!)
+| Requirement | Minimum Version | Download Link | Notes |
+| :--- | :--- | :--- | :--- |
+| **Go** | `1.22+` (Recommended: `1.26+`) | [golang.org/dl](https://go.dev/dl/) | Required to compile and run the backend API. |
+| **Node.js & npm** | `v18+` (Recommended: `v20+` or `v24+`) | [nodejs.org](https://nodejs.org/) | Required for Vite frontend and client dependencies. |
+| **MongoDB** | `7.0+` | [mongodb.com](https://www.mongodb.com/try/download/community) | Or run via Docker (`docker compose up -d`). |
+| **Git** | `2.x` | [git-scm.com](https://git-scm.com/) | Version control. |
 
 ---
 
-## API Overview
+## 🚀 Quick Start (First-Time Setup)
 
-*All protected routes require an authenticated session cookie.*
+### 1. Clone the Repository
+```bash
+git clone https://github.com/gi-server/poneglyph.git
+cd poneglyph
+```
 
-- **Auth**: `POST /api/login`, `POST /api/logout`
-- **Dashboard**: `GET /api/stats`, `POST /api/admin/wipe`
-- **Customers**: `GET /api/customers`, `GET /api/customers/{id}/documents`
-- **Documents**: `GET /api/documents`, `POST /api/documents/upload`
-- **Processing**: `POST /api/documents/{id}/confirm`, `GET /api/documents/{id}/view`
-- **Internal**: `POST /api/internal/webhook/analyze` (Great Sage → Poneglyph callback)
+### 2. Configure Environment Variables
+Copy the example environment file to `.env`:
+```powershell
+# On Windows PowerShell
+Copy-Item .env.example .env
+
+# On macOS / Linux
+cp .env.example .env
+```
+
+Verify your `.env` configuration:
+```env
+MONGO_URI=mongodb://localhost:27017
+MONGO_DB=poneglyph
+JWT_SECRET=your_super_secret_jwt_key
+```
+
+### 3. Start MongoDB
+If using Docker:
+```bash
+docker compose up -d
+```
+*(Otherwise, ensure your local MongoDB service is running on `mongodb://localhost:27017`).*
+
+### 4. Install Frontend Dependencies
+```bash
+cd frontend
+npm install
+cd ..
+```
 
 ---
 
-## Production Deployment
+## 💻 Running in Development Mode
 
-1. **Secrets**: Generate a real `JWT_SECRET` (`openssl rand -base64 32`) and update the `.env` file.
-2. **HTTPS**: Terminate TLS via a reverse proxy (Nginx/Caddy) to ensure the `Secure` flag on cookies works properly.
-3. **Database SSL**: Set `DB_SSLMODE=require` in your `.env`.
-4. **Network**: Keep Ollama and Great Sage bound strictly to `127.0.0.1` or isolated in a private Docker network.
-5. **Great Sage**: Must be deployed independently. See the [Great Sage README](../great-sage/README.md) for setup instructions.
+### Option A: One-Click Dev Launcher (Windows PowerShell)
+Run the bundled launcher:
+```powershell
+.\start.ps1
+```
+This script will automatically:
+1. Free up ports `8080` and `5173` if previously occupied.
+2. Launch the **Go Backend Server** on `http://localhost:8080`.
+3. Launch the **Vite React Frontend** on `http://localhost:5173` with Hot Module Replacement (HMR).
+
+### Option B: Manual Two-Terminal Launch
+
+**Terminal 1 — Backend (Go)**:
+```bash
+go run main.go
+```
+*Backend runs on `http://localhost:8080`.*
+
+**Terminal 2 — Frontend (Vite + React)**:
+```bash
+cd frontend
+npm run dev
+```
+*Frontend runs on `http://localhost:5173` and proxies `/api` calls to `:8080`.*
+
+---
+
+## 🧪 Running Tests
+
+Run the automated backend test suite (validates file constraints, sizes, types, and folder creation):
+```bash
+go test -v ./...
+```
+
+---
+
+## 📦 Production Build (Single Standalone Executable)
+
+To compile both the frontend and backend into a single `.exe` binary:
+
+```powershell
+.\build.ps1
+```
+
+This compiles:
+1. The frontend assets via Vite into `./public`.
+2. The Go backend embedding `./public` via `//go:embed`.
+3. Produces a self-contained **`poneglyph.exe`** (~11 MB) requiring zero external runtime files.
+
+To run the production build:
+```powershell
+.\poneglyph.exe
+```
+Open `http://localhost:8080` in your browser.
+
+---

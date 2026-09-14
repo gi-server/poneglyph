@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"docunest/internal/database"
-	"docunest/internal/models"
+	"poneglyph/internal/database"
+	"poneglyph/internal/models"
 )
 
 type SSELogEvent struct {
