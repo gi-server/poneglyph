@@ -2,17 +2,15 @@ version: '3.8'
 
 services:
   db:
-    image: postgres:15-alpine
+    image: mongo:7.0
     container_name: docunest_db
     environment:
-      POSTGRES_USER: ${DB_USER:-docunest}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
-      POSTGRES_DB: ${DB_NAME:-docunest}
+      MONGO_INITDB_DATABASE: ${MONGO_DB:-poneglyph}
     ports:
-      # Bind only to localhost — do not expose PostgreSQL to external interfaces
-      - "127.0.0.1:5432:5432"
+      # Bind only to localhost — do not expose MongoDB to external interfaces
+      - "127.0.0.1:27017:27017"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - mongodata:/data/db
     # Resource limits to prevent a runaway container from exhausting host memory
     deploy:
       resources:
@@ -21,4 +19,5 @@ services:
     restart: unless-stopped
 
 volumes:
-  pgdata:
+  mongodata:
+

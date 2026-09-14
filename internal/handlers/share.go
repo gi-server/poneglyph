@@ -7,11 +7,14 @@ import (
 	"log"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"docunest/internal/database"
+	"docunest/internal/models"
 
 	"github.com/gorilla/mux"
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 // Generate secure random token
@@ -32,24 +35,23 @@ func CreateShareLink(w http.ResponseWriter, r *http.Request) {
 	}
 
 	vars := mux.Vars(r)
-	docID := vars["id"]
+	docID, err := strconv.Atoi(vars["id"])
+	if err != nil {
+		http.Error(w, "Invalid document ID", http.StatusBadRequest)
+		return
+	}
 
 	role, _ := r.Context().Value(RoleKey).(string)
 
+	docFilter := bson.M{"id": docID}
 	if role != "admin" {
-		var exists bool
-		err := database.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM documents WHERE id = $1 AND workspace_id = $2)", docID, workspaceID).Scan(&exists)
-		if err != nil || !exists {
-			http.Error(w, "Document not found or access denied", http.StatusNotFound)
-			return
-		}
-	} else {
-		var exists bool
-		err := database.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM documents WHERE id = $1)", docID).Scan(&exists)
-		if err != nil || !exists {
-			http.Error(w, "Document not found", http.StatusNotFound)
-			return
-		}
+		docFilter["workspace_id"] = workspaceID
+	}
+
+	count, err := database.GetCollection("documents").CountDocuments(r.Context(), docFilter)
+	if err != nil || count == 0 {
+		http.Error(w, "Document not found or access denied", http.StatusNotFound)
+		return
 	}
 
 	var req struct {
@@ -66,11 +68,16 @@ func CreateShareLink(w http.ResponseWriter, r *http.Request) {
 	token := generateToken(32)
 	expiresAt := time.Now().Add(time.Duration(req.ExpiresInHours) * time.Hour)
 
-	_, err := database.DB.Exec(`
-		INSERT INTO document_shares (token, document_id, expires_at, single_use)
-		VALUES ($1, $2, $3, $4)
-	`, token, docID, expiresAt, req.SingleUse)
+	shareRecord := models.DocumentShare{
+		Token:      token,
+		DocumentID: docID,
+		ExpiresAt:  expiresAt,
+		SingleUse:  req.SingleUse,
+		IsRevoked:  false,
+		CreatedAt:  time.Now(),
+	}
 
+	_, err = database.GetCollection("document_shares").InsertOne(r.Context(), shareRecord)
 	if err != nil {
 		http.Error(w, "Failed to create share link", http.StatusInternalServerError)
 		return
@@ -90,40 +97,37 @@ func ViewSharedDocument(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	token := vars["token"]
 
-	var docID int
-	var storedPath string
-	var expiresAt time.Time
-	var singleUse, isRevoked bool
-
-	err := database.DB.QueryRow(`
-		SELECT s.document_id, s.expires_at, s.single_use, s.is_revoked, d.filepath
-		FROM document_shares s
-		JOIN documents d ON s.document_id = d.id
-		WHERE s.token = $1
-	`, token).Scan(&docID, &expiresAt, &singleUse, &isRevoked, &storedPath)
-
+	var share models.DocumentShare
+	err := database.GetCollection("document_shares").FindOne(r.Context(), bson.M{"token": token}).Decode(&share)
 	if err != nil {
 		http.Error(w, "Invalid or expired share link", http.StatusNotFound)
 		return
 	}
 
-	if isRevoked {
+	if share.IsRevoked {
 		http.Error(w, "This share link has been revoked", http.StatusForbidden)
 		return
 	}
 
-	if time.Now().After(expiresAt) {
+	if time.Now().After(share.ExpiresAt) {
 		http.Error(w, "This share link has expired", http.StatusForbidden)
 		return
 	}
 
-	if singleUse {
+	if share.SingleUse {
 		// Revoke it immediately
-		database.DB.Exec("UPDATE document_shares SET is_revoked = TRUE WHERE token = $1", token)
+		database.GetCollection("document_shares").UpdateOne(r.Context(), bson.M{"token": token}, bson.M{"$set": bson.M{"is_revoked": true}})
+	}
+
+	var doc models.Document
+	err = database.GetCollection("documents").FindOne(r.Context(), bson.M{"id": share.DocumentID}).Decode(&doc)
+	if err != nil {
+		http.Error(w, "Document not found", http.StatusNotFound)
+		return
 	}
 
 	// Serve inline for browser preview; X-Content-Type-Options is set by middleware
-	absPath, err := filepath.Abs(storedPath)
+	absPath, err := filepath.Abs(doc.Filepath)
 	if err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
@@ -134,11 +138,7 @@ func ViewSharedDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// We don't have userID here since it's unauthenticated, so we log as system or track by token
-	// Let's just log it using the document's owner
-	var ownerID int
-	database.DB.QueryRow("SELECT user_id FROM documents WHERE id = $1", docID).Scan(&ownerID)
-	LogEvent(ownerID, 0, "share_link_accessed", map[string]interface{}{"document_id": docID, "token_prefix": token[:8]})
+	LogEvent(doc.WorkspaceID, 0, "share_link_accessed", map[string]interface{}{"document_id": doc.ID, "token_prefix": token[:8]})
 
 	w.Header().Set("Content-Disposition", "inline")
 	http.ServeFile(w, r, absPath)
@@ -153,33 +153,36 @@ func RevokeShareLink(w http.ResponseWriter, r *http.Request) {
 	}
 
 	vars := mux.Vars(r)
-	docID := vars["id"]
+	docID, err := strconv.Atoi(vars["id"])
+	if err != nil {
+		http.Error(w, "Invalid document ID", http.StatusBadRequest)
+		return
+	}
 	token := vars["token"]
 
 	role, _ := r.Context().Value(RoleKey).(string)
 
+	docFilter := bson.M{"id": docID}
 	if role != "admin" {
-		var exists bool
-		err := database.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM documents WHERE id = $1 AND workspace_id = $2)", docID, workspaceID).Scan(&exists)
-		if err != nil || !exists {
-			http.Error(w, "Document not found or access denied", http.StatusNotFound)
-			return
-		}
-	} else {
-		var exists bool
-		err := database.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM documents WHERE id = $1)", docID).Scan(&exists)
-		if err != nil || !exists {
-			http.Error(w, "Document not found", http.StatusNotFound)
-			return
-		}
+		docFilter["workspace_id"] = workspaceID
 	}
 
-	res, err := database.DB.Exec("UPDATE document_shares SET is_revoked = TRUE WHERE token = $1 AND document_id = $2", token, docID)
+	count, err := database.GetCollection("documents").CountDocuments(r.Context(), docFilter)
+	if err != nil || count == 0 {
+		http.Error(w, "Document not found or access denied", http.StatusNotFound)
+		return
+	}
+
+	res, err := database.GetCollection("document_shares").UpdateOne(
+		r.Context(),
+		bson.M{"token": token, "document_id": docID},
+		bson.M{"$set": bson.M{"is_revoked": true}},
+	)
 	if err != nil {
 		http.Error(w, "Failed to revoke link", http.StatusInternalServerError)
 		return
 	}
-	if affected, _ := res.RowsAffected(); affected == 0 {
+	if res.MatchedCount == 0 {
 		http.Error(w, "Share link not found", http.StatusNotFound)
 		return
 	}

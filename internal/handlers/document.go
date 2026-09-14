@@ -1,16 +1,18 @@
 package handlers
 
 import (
-	"database/sql"
 	"encoding/json"
 	"log"
 	"net/http"
 	"path/filepath"
+	"strconv"
 
 	"docunest/internal/database"
 	"docunest/internal/models"
 
 	"github.com/gorilla/mux"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 func GetDocuments(w http.ResponseWriter, r *http.Request) {
@@ -23,61 +25,75 @@ func GetDocuments(w http.ResponseWriter, r *http.Request) {
 
 	role, _ := r.Context().Value(RoleKey).(string)
 
-	var rows *sql.Rows
-	var err error
-
+	filter := bson.M{}
+	limit := int64(50)
 	if role == "admin" {
-		rows, err = database.DB.Query(`
-			SELECT d.id, d.filename, d.original_name, d.status, d.document_type, d.extracted_data, d.person_name, d.dob, d.document_id_number, d.confidence, d.created_at, d.ocr_text, c.name 
-			FROM documents d 
-			LEFT JOIN customers c ON d.customer_id = c.id 
-			ORDER BY d.created_at DESC LIMIT 100
-		`)
+		limit = 100
 	} else {
-		rows, err = database.DB.Query(`
-			SELECT d.id, d.filename, d.original_name, d.status, d.document_type, d.extracted_data, d.person_name, d.dob, d.document_id_number, d.confidence, d.created_at, d.ocr_text, c.name 
-			FROM documents d 
-			LEFT JOIN customers c ON d.customer_id = c.id 
-			WHERE d.workspace_id = $1
-			ORDER BY d.created_at DESC LIMIT 50
-		`, workspaceID)
+		filter["workspace_id"] = workspaceID
 	}
+
+	opts := options.Find().
+		SetSort(bson.D{{Key: "created_at", Value: -1}}).
+		SetLimit(limit)
+
+	cursor, err := database.GetCollection("documents").Find(r.Context(), filter, opts)
 	if err != nil {
 		log.Printf("Failed to fetch documents: %v", err)
 		http.Error(w, "Failed to fetch documents", http.StatusInternalServerError)
 		return
 	}
-	defer rows.Close()
+	defer cursor.Close(r.Context())
+
+	var rawDocs []models.Document
+	if err := cursor.All(r.Context(), &rawDocs); err != nil {
+		http.Error(w, "Failed to parse documents", http.StatusInternalServerError)
+		return
+	}
+
+	// Fetch customer names for documents with customer_id
+	var customerIDs []string
+	for _, doc := range rawDocs {
+		if doc.CustomerID != nil && *doc.CustomerID != "" {
+			customerIDs = append(customerIDs, *doc.CustomerID)
+		}
+	}
+
+	customerMap := make(map[string]string)
+	if len(customerIDs) > 0 {
+		custCursor, err := database.GetCollection("customers").Find(r.Context(), bson.M{"id": bson.M{"$in": customerIDs}})
+		if err == nil {
+			var custs []models.Customer
+			if err := custCursor.All(r.Context(), &custs); err == nil {
+				for _, c := range custs {
+					customerMap[c.ID] = c.Name
+				}
+			}
+			custCursor.Close(r.Context())
+		}
+	}
 
 	type DocumentWithCustomer struct {
 		models.Document
 		CustomerName *string `json:"customer_name,omitempty"`
 	}
 
-	var documents []DocumentWithCustomer
-	for rows.Next() {
-		var doc DocumentWithCustomer
-		if err := rows.Scan(
-			&doc.ID, &doc.Filename, &doc.OriginalName, &doc.Status,
-			&doc.DocumentType, &doc.ExtractedData, &doc.PersonName, &doc.DOB, &doc.DocumentIDNumber, &doc.Confidence, &doc.CreatedAt, &doc.OCRText, &doc.CustomerName,
-		); err != nil {
-			http.Error(w, "Failed to parse document", http.StatusInternalServerError)
-			return
+	documents := make([]DocumentWithCustomer, 0, len(rawDocs))
+	for _, doc := range rawDocs {
+		item := DocumentWithCustomer{Document: doc}
+		if doc.CustomerID != nil {
+			if name, exists := customerMap[*doc.CustomerID]; exists {
+				item.CustomerName = &name
+			}
 		}
-		documents = append(documents, doc)
+		documents = append(documents, item)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if documents == nil {
-		documents = []DocumentWithCustomer{}
-	}
 	json.NewEncoder(w).Encode(documents)
 }
 
 // ViewDocument streams a document file to the browser after verifying ownership.
-// Files are served with Content-Disposition: inline to allow browser viewing,
-// but X-Content-Type-Options: nosniff is set via SecurityHeaders middleware
-// to prevent MIME sniffing of served content.
 func ViewDocument(w http.ResponseWriter, r *http.Request) {
 	workspaceID, _ := r.Context().Value(WorkspaceIDKey).(int)
 	userID, ok := r.Context().Value(UserIDKey).(int)
@@ -87,32 +103,29 @@ func ViewDocument(w http.ResponseWriter, r *http.Request) {
 	}
 
 	vars := mux.Vars(r)
-	docID := vars["id"]
+	docIDStr := vars["id"]
+	docID, err := strconv.Atoi(docIDStr)
+	if err != nil {
+		http.Error(w, "Invalid document ID", http.StatusBadRequest)
+		return
+	}
 
-	// Fetch filepath and verify ownership in one query
 	role, _ := r.Context().Value(RoleKey).(string)
 
-	var storedPath string
-	var err error
-
-	if role == "admin" {
-		err = database.DB.QueryRow(
-			"SELECT filepath FROM documents WHERE id = $1",
-			docID,
-		).Scan(&storedPath)
-	} else {
-		err = database.DB.QueryRow(
-			"SELECT filepath FROM documents WHERE id = $1 AND workspace_id = $2",
-			docID, userID,
-		).Scan(&storedPath)
+	filter := bson.M{"id": docID}
+	if role != "admin" {
+		filter["workspace_id"] = workspaceID
 	}
+
+	var doc models.Document
+	err = database.GetCollection("documents").FindOne(r.Context(), filter).Decode(&doc)
 	if err != nil {
 		http.Error(w, "Document not found or access denied", http.StatusNotFound)
 		return
 	}
 
 	// Sanitize path: resolve to absolute and ensure it stays within uploads dir
-	absPath, err := filepath.Abs(storedPath)
+	absPath, err := filepath.Abs(doc.Filepath)
 	if err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
@@ -125,7 +138,7 @@ func ViewDocument(w http.ResponseWriter, r *http.Request) {
 
 	// Reject any path that doesn't begin with the uploads directory
 	if len(absPath) <= len(absUploads) || absPath[:len(absUploads)] != absUploads {
-		log.Printf("Path traversal attempt detected for doc %s: resolved to %s", docID, absPath)
+		log.Printf("Path traversal attempt detected for doc %d: resolved to %s", docID, absPath)
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}

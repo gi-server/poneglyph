@@ -1,166 +1,174 @@
 package database
 
 import (
-	"database/sql"
+	"context"
 	"fmt"
 	"log"
 	"os"
+	"time"
 
-	_ "github.com/lib/pq"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-var DB *sql.DB
+var (
+	Client *mongo.Client
+	DB     *mongo.Database
+)
 
+// ConnectDB establishes a connection to the MongoDB instance.
 func ConnectDB() error {
-	host := os.Getenv("DB_HOST")
-	port := os.Getenv("DB_PORT")
-	user := os.Getenv("DB_USER")
-	password := os.Getenv("DB_PASSWORD")
-	dbname := os.Getenv("DB_NAME")
-
-	if host == "" {
-		host = "localhost"
-	}
-	if port == "" {
-		port = "5432"
-	}
-	if user == "" {
-		user = "postgres"
-	}
-	if dbname == "" {
-		dbname = "postgres"
+	uri := os.Getenv("MONGO_URI")
+	if uri == "" {
+		uri = "mongodb://localhost:27017"
 	}
 
-	psqlInfo := fmt.Sprintf(
-		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
-		host, port, user, password, dbname,
-		getEnvDB("DB_SSLMODE", "disable"), // set to 'require' or 'verify-full' in production
-	)
+	dbName := os.Getenv("MONGO_DB")
+	if dbName == "" {
+		dbName = "poneglyph"
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	clientOptions := options.Client().ApplyURI(uri).
+		SetMaxPoolSize(50).
+		SetMinPoolSize(5).
+		SetMaxConnIdleTime(5 * time.Minute)
 
 	var err error
-	DB, err = sql.Open("postgres", psqlInfo)
+	Client, err = mongo.Connect(ctx, clientOptions)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to connect to mongodb: %w", err)
 	}
 
-	// Connection pool configuration — prevents too many open connections
-	DB.SetMaxOpenConns(25)
-	DB.SetMaxIdleConns(5)
-	DB.SetConnMaxLifetime(5 * 60 * 1e9) // 5 minutes
-
-	err = DB.Ping()
-	if err != nil {
-		return err
+	if err = Client.Ping(ctx, nil); err != nil {
+		return fmt.Errorf("failed to ping mongodb: %w", err)
 	}
 
-	log.Println("Successfully connected to the database")
+	DB = Client.Database(dbName)
+	log.Printf("Successfully connected to MongoDB database: %s", dbName)
 	return nil
 }
 
-func getEnvDB(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
+// GetCollection returns a reference to the specified collection.
+func GetCollection(name string) *mongo.Collection {
+	return DB.Collection(name)
 }
 
-func InitSchema() error {
-	schema := `
-	CREATE TABLE IF NOT EXISTS users (
-		id SERIAL PRIMARY KEY,
-		username VARCHAR(50) UNIQUE NOT NULL,
-		password_hash VARCHAR(255) NOT NULL,
-		role VARCHAR(50) DEFAULT 'user',
-		is_disabled BOOLEAN DEFAULT FALSE,
-		admin_id INT REFERENCES users(id),
-		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-	);
+// GetNextSequence generates an atomic auto-increment integer ID for a given collection/sequence.
+func GetNextSequence(seqName string) (int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-	CREATE TABLE IF NOT EXISTS customers (
-		id VARCHAR(50) PRIMARY KEY,
-		workspace_id INT REFERENCES users(id),
-		name VARCHAR(255) NOT NULL,
-		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-	);
+	coll := DB.Collection("counters")
+	filter := bson.M{"_id": seqName}
+	update := bson.M{"$inc": bson.M{"seq": 1}}
 
-	CREATE TABLE IF NOT EXISTS documents (
-		id SERIAL PRIMARY KEY,
-		workspace_id INT REFERENCES users(id),
-		filename VARCHAR(255) NOT NULL,
-		filepath VARCHAR(512) NOT NULL,
-		original_name VARCHAR(255) NOT NULL,
-		status VARCHAR(50) DEFAULT 'uploaded',
-		ocr_text TEXT,
-		document_type VARCHAR(100),
-		person_name VARCHAR(255),
-		dob VARCHAR(50),
-		document_id_number VARCHAR(100),
-		confidence FLOAT,
-		customer_id VARCHAR(50) REFERENCES customers(id),
-		job_id VARCHAR(36),
-		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-	);
+	opts := options.FindOneAndUpdate().
+		SetUpsert(true).
+		SetReturnDocument(options.After)
 
-	CREATE TABLE IF NOT EXISTS audit_logs (
-		id SERIAL PRIMARY KEY,
-		workspace_id INT REFERENCES users(id),
-		actor_id INT REFERENCES users(id),
-		document_id INT REFERENCES documents(id),
-		action VARCHAR(255) NOT NULL,
-		details JSONB,
-		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-	);
-
-	CREATE TABLE IF NOT EXISTS document_shares (
-		token VARCHAR(64) PRIMARY KEY,
-		document_id INT REFERENCES documents(id),
-		expires_at TIMESTAMP,
-		single_use BOOLEAN DEFAULT FALSE,
-		is_revoked BOOLEAN DEFAULT FALSE,
-		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-	);
-	`
-	_, err := DB.Exec(schema)
-	if err != nil {
-		return fmt.Errorf("error creating schema: %w", err)
+	var result struct {
+		ID  string `bson:"_id"`
+		Seq int    `bson:"seq"`
 	}
 
-	// 1. Add missing columns safely
-	DB.Exec("ALTER TABLE users ADD COLUMN role VARCHAR(50) DEFAULT 'user'")
-	DB.Exec("ALTER TABLE users ADD COLUMN is_disabled BOOLEAN DEFAULT FALSE")
-	DB.Exec("ALTER TABLE users ADD COLUMN admin_id INT REFERENCES users(id)")
-	
-	DB.Exec("ALTER TABLE documents ADD COLUMN dob VARCHAR(50)")
-	DB.Exec("ALTER TABLE documents ADD COLUMN document_id_number VARCHAR(100)")
-	DB.Exec("ALTER TABLE documents ADD COLUMN customer_id VARCHAR(50) REFERENCES customers(id)")
-	DB.Exec("ALTER TABLE documents ADD COLUMN job_id VARCHAR(36)")
-	DB.Exec("ALTER TABLE audit_logs ADD COLUMN actor_id INT REFERENCES users(id)")
+	err := coll.FindOneAndUpdate(ctx, filter, update, opts).Decode(&result)
+	if err != nil {
+		return 0, fmt.Errorf("failed to generate sequence for %s: %w", seqName, err)
+	}
 
-	// 2. Rename existing columns to workspace_id where appropriate
-	// (Ignore errors if the column is already renamed or doesn't exist)
-	DB.Exec("ALTER TABLE customers RENAME COLUMN user_id TO workspace_id")
-	DB.Exec("ALTER TABLE documents RENAME COLUMN user_id TO workspace_id")
-	DB.Exec("ALTER TABLE audit_logs RENAME COLUMN user_id TO workspace_id")
+	return result.Seq, nil
+}
 
-	// 3. Add extracted_data JSONB column for flexible document extraction storage.
-	// This is the canonical source of truth for all document-type-specific extracted fields.
-	// Legacy columns (person_name, dob, document_id_number) are kept temporarily as
-	// synchronized projections for backward compatibility.
-	DB.Exec("ALTER TABLE documents ADD COLUMN extracted_data JSONB DEFAULT '{}'::jsonb")
+// InitSchema sets up necessary indexes for all collections.
+func InitSchema() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
 
-	// 4. Backfill existing identity-document rows into extracted_data.
-	// Idempotent: only touches rows where extracted_data is empty and legacy fields exist.
-	DB.Exec(`
-		UPDATE documents
-		SET extracted_data = jsonb_strip_nulls(jsonb_build_object(
-			'person_name', person_name,
-			'dob', dob,
-			'document_id_number', document_id_number
-		))
-		WHERE (extracted_data IS NULL OR extracted_data = '{}'::jsonb)
-		  AND (person_name IS NOT NULL OR dob IS NOT NULL OR document_id_number IS NOT NULL)
-	`)
+	// 1. Users Indexes
+	usersColl := DB.Collection("users")
+	_, err := usersColl.Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{
+			Keys:    bson.D{{Key: "username", Value: 1}},
+			Options: options.Index().SetUnique(true),
+		},
+		{
+			Keys:    bson.D{{Key: "id", Value: 1}},
+			Options: options.Index().SetUnique(true),
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create users indexes: %w", err)
+	}
 
-	log.Println("Database schema initialized")
+	// 2. Customers Indexes
+	customersColl := DB.Collection("customers")
+	_, err = customersColl.Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{
+			Keys:    bson.D{{Key: "id", Value: 1}},
+			Options: options.Index().SetUnique(true),
+		},
+		{
+			Keys: bson.D{{Key: "workspace_id", Value: 1}, {Key: "name", Value: 1}},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create customers indexes: %w", err)
+	}
+
+	// 3. Documents Indexes
+	documentsColl := DB.Collection("documents")
+	_, err = documentsColl.Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{
+			Keys:    bson.D{{Key: "id", Value: 1}},
+			Options: options.Index().SetUnique(true),
+		},
+		{
+			Keys: bson.D{{Key: "workspace_id", Value: 1}, {Key: "created_at", Value: -1}},
+		},
+		{
+			Keys: bson.D{{Key: "customer_id", Value: 1}},
+		},
+		{
+			Keys: bson.D{{Key: "job_id", Value: 1}},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create documents indexes: %w", err)
+	}
+
+	// 4. Audit Logs Indexes
+	auditColl := DB.Collection("audit_logs")
+	_, err = auditColl.Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{
+			Keys: bson.D{{Key: "workspace_id", Value: 1}, {Key: "created_at", Value: -1}},
+		},
+		{
+			Keys: bson.D{{Key: "document_id", Value: 1}},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create audit_logs indexes: %w", err)
+	}
+
+	// 5. Document Shares Indexes
+	sharesColl := DB.Collection("document_shares")
+	_, err = sharesColl.Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{
+			Keys:    bson.D{{Key: "token", Value: 1}},
+			Options: options.Index().SetUnique(true),
+		},
+		{
+			Keys: bson.D{{Key: "document_id", Value: 1}},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create document_shares indexes: %w", err)
+	}
+
+	log.Println("MongoDB schema and indexes successfully initialized")
 	return nil
 }

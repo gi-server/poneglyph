@@ -6,14 +6,18 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"docunest/internal/database"
+	"docunest/internal/models"
 	"docunest/internal/storage"
+
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 func GetStats(w http.ResponseWriter, r *http.Request) {
 	workspaceID, _ := r.Context().Value(WorkspaceIDKey).(int)
-	userID, ok := r.Context().Value(UserIDKey).(int)
+	_, ok := r.Context().Value(UserIDKey).(int)
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
@@ -28,43 +32,49 @@ func GetStats(w http.ResponseWriter, r *http.Request) {
 	role, _ := r.Context().Value(RoleKey).(string)
 	isAdmin := (role == "admin")
 
-	var err error
-	if isAdmin {
-		err = database.DB.QueryRow("SELECT COUNT(*) FROM documents").Scan(&stats.TotalDocuments)
-	} else {
-		err = database.DB.QueryRow("SELECT COUNT(*) FROM documents WHERE workspace_id = $1", workspaceID).Scan(&stats.TotalDocuments)
+	docsColl := database.GetCollection("documents")
+	custColl := database.GetCollection("customers")
+
+	docFilter := bson.M{}
+	custFilter := bson.M{}
+	if !isAdmin {
+		docFilter["workspace_id"] = workspaceID
+		custFilter["workspace_id"] = workspaceID
 	}
+
+	totalDocs, err := docsColl.CountDocuments(r.Context(), docFilter)
 	if err != nil {
 		http.Error(w, "Failed to get total documents", http.StatusInternalServerError)
 		return
 	}
+	stats.TotalDocuments = int(totalDocs)
 
-	if isAdmin {
-		err = database.DB.QueryRow("SELECT COUNT(*) FROM customers").Scan(&stats.TotalCustomers)
-	} else {
-		err = database.DB.QueryRow("SELECT COUNT(*) FROM customers WHERE workspace_id = $1", workspaceID).Scan(&stats.TotalCustomers)
-	}
+	totalCusts, err := custColl.CountDocuments(r.Context(), custFilter)
 	if err != nil {
 		http.Error(w, "Failed to get total customers", http.StatusInternalServerError)
 		return
 	}
+	stats.TotalCustomers = int(totalCusts)
 
-	if isAdmin {
-		err = database.DB.QueryRow("SELECT COUNT(*) FROM documents WHERE DATE(created_at) = CURRENT_DATE").Scan(&stats.ProcessedToday)
-	} else {
-		err = database.DB.QueryRow("SELECT COUNT(*) FROM documents WHERE workspace_id = $1 AND DATE(created_at) = CURRENT_DATE", userID).Scan(&stats.ProcessedToday)
+	now := time.Now()
+	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	todayFilter := bson.M{"created_at": bson.M{"$gte": startOfDay}}
+	if !isAdmin {
+		todayFilter["workspace_id"] = workspaceID
 	}
+
+	processedToday, err := docsColl.CountDocuments(r.Context(), todayFilter)
 	if err != nil {
 		http.Error(w, "Failed to get today's documents", http.StatusInternalServerError)
 		return
 	}
+	stats.ProcessedToday = int(processedToday)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(stats)
 }
 
-// WipeDatabase deletes all data belonging to the authenticated user and removes
-// their uploaded files from disk. This is irreversible.
+// WipeDatabase deletes all data and removes uploaded files from disk.
 // The caller must supply {"confirmation": "wipe my data"} in the request body.
 func WipeDatabase(w http.ResponseWriter, r *http.Request) {
 	workspaceID, _ := r.Context().Value(WorkspaceIDKey).(int)
@@ -89,9 +99,9 @@ func WipeDatabase(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Ensure this is an admin!
-	var role string
-	database.DB.QueryRow("SELECT role FROM users WHERE id = $1", userID).Scan(&role)
-	if role != "admin" {
+	var user models.User
+	err := database.GetCollection("users").FindOne(r.Context(), bson.M{"id": userID}).Decode(&user)
+	if err != nil || user.Role != "admin" {
 		http.Error(w, "Forbidden: Only admins can wipe data", http.StatusForbidden)
 		return
 	}
@@ -99,61 +109,36 @@ func WipeDatabase(w http.ResponseWriter, r *http.Request) {
 	LogEvent(workspaceID, userID, "data_wipe_started", map[string]interface{}{"action": "wipe my data"})
 
 	// 1. Collect all file paths before deleting DB records
-	rows, err := database.DB.Query("SELECT filepath FROM documents")
+	docsColl := database.GetCollection("documents")
+	cursor, err := docsColl.Find(r.Context(), bson.M{})
 	if err != nil {
-		log.Printf("WipeDatabase: failed to fetch filepaths: %v", err)
+		log.Printf("WipeDatabase: failed to fetch documents: %v", err)
 		http.Error(w, "Failed to initiate wipe", http.StatusInternalServerError)
 		return
 	}
+	defer cursor.Close(r.Context())
+
 	var filePaths []string
-	for rows.Next() {
-		var fp string
-		if err := rows.Scan(&fp); err == nil {
-			filePaths = append(filePaths, fp)
+	for cursor.Next(r.Context()) {
+		var doc models.Document
+		if err := cursor.Decode(&doc); err == nil && doc.Filepath != "" {
+			filePaths = append(filePaths, doc.Filepath)
 		}
 	}
-	rows.Close()
 
-	// 2. Delete DB records in dependency order within a transaction
-	tx, err := database.DB.Begin()
-	if err != nil {
-		http.Error(w, "Failed to start transaction", http.StatusInternalServerError)
-		return
-	}
-	defer tx.Rollback()
+	// 2. Delete collection records
+	ctx := r.Context()
+	database.GetCollection("document_shares").DeleteMany(ctx, bson.M{})
+	database.GetCollection("audit_logs").DeleteMany(ctx, bson.M{})
+	database.GetCollection("documents").DeleteMany(ctx, bson.M{})
+	database.GetCollection("customers").DeleteMany(ctx, bson.M{})
 
-	if _, err := tx.Exec("DELETE FROM document_shares"); err != nil {
-		log.Printf("WipeDatabase: failed to delete document_shares: %v", err)
-		http.Error(w, "Wipe failed during document_shares deletion", http.StatusInternalServerError)
-		return
-	}
-	if _, err := tx.Exec("DELETE FROM audit_logs"); err != nil {
-		log.Printf("WipeDatabase: failed to delete audit_logs: %v", err)
-		http.Error(w, "Wipe failed during audit_logs deletion", http.StatusInternalServerError)
-		return
-	}
-	if _, err := tx.Exec("DELETE FROM documents"); err != nil {
-		log.Printf("WipeDatabase: failed to delete documents: %v", err)
-		http.Error(w, "Wipe failed during documents deletion", http.StatusInternalServerError)
-		return
-	}
-	if _, err := tx.Exec("DELETE FROM customers"); err != nil {
-		log.Printf("WipeDatabase: failed to delete customers: %v", err)
-		http.Error(w, "Wipe failed during customers deletion", http.StatusInternalServerError)
-		return
-	}
-	if err := tx.Commit(); err != nil {
-		http.Error(w, "Wipe failed at commit", http.StatusInternalServerError)
-		return
-	}
-
-	// 3. Delete files from disk — after the transaction commits successfully
+	// 3. Delete files from disk
 	absUploads, _ := filepath.Abs(storage.UploadDir)
 	deleted, skipped := 0, 0
 	for _, fp := range filePaths {
 		abs, err := filepath.Abs(fp)
 		if err != nil || len(abs) <= len(absUploads) || abs[:len(absUploads)] != absUploads {
-			// Skip any path that doesn't resolve inside the uploads dir (safety guard)
 			skipped++
 			continue
 		}

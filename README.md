@@ -10,7 +10,7 @@ Designed for environments where document confidentiality is non-negotiable, Docu
 
 The easiest way to run the entire stack (Poneglyph + Great Sage) on Windows is using the provided `start.ps1` orchestrator script. 
 
-1. Ensure **PostgreSQL** is running (`docker-compose up -d`)
+1. Ensure **MongoDB** is running (`docker-compose up -d`)
 2. Ensure **Ollama** is running locally
 3. Open a PowerShell terminal in this directory and run:
    ```powershell
@@ -40,7 +40,7 @@ The easiest way to run the entire stack (Poneglyph + Great Sage) on Windows is u
 DocuNest is built to strict security standards:
 - **Authentication**: Argon2id password hashing, strict brute-force protection (IP lockout after 10 failed attempts), and secure HttpOnly cookies.
 - **Upload Hardening**: File types are verified via binary MIME inspection. Files are stored using cryptographic UUIDs to prevent path traversal.
-- **Multi-Tenant DB Isolation**: Strict `user_id` scoping across all PostgreSQL tables.
+- **Multi-Tenant DB Isolation**: Strict `workspace_id` scoping across all MongoDB collections.
 - **Audit Logging**: Every AI confirmation and manual file mapping is recorded.
 
 ---
@@ -59,7 +59,7 @@ sequenceDiagram
     participant User
     participant GoAPI as Poneglyph (Go API)
     participant GS as Great Sage (Python)
-    participant DB as PostgreSQL
+    participant DB as MongoDB
 
     User->>GoAPI: Upload Document (PDF/Image)
     GoAPI->>DB: Save metadata (status: uploaded)
@@ -79,7 +79,7 @@ sequenceDiagram
 | Responsibility | Owner |
 |---|---|
 | Users, auth, sessions | Poneglyph |
-| Customers, PostgreSQL | Poneglyph |
+| Customers, MongoDB | Poneglyph |
 | Document storage, sharing | Poneglyph |
 | Human review, audit logs | Poneglyph |
 | Frontend | Poneglyph |
@@ -93,7 +93,7 @@ Great Sage has **no direct access** to Poneglyph's database.
 ### Other Components
 
 - **Frontend**: Single-page app built with Tailwind CSS and Alpine.js (zero build step).
-- **Data Layer (PostgreSQL)**: Multi-tenant relational storage.
+- **Data Layer (MongoDB)**: Document-oriented collection storage.
 
 ---
 
@@ -102,14 +102,14 @@ Great Sage has **no direct access** to Poneglyph's database.
 **Prerequisites**: 
 - Go 1.21+
 - Python 3.10+ 
-- PostgreSQL (or Docker)
+- MongoDB (or Docker)
 - Ollama (Ensure the `qwen2.5` model is pulled: `ollama pull qwen2.5`)
 - Tesseract OCR (install via `winget install UB-Mannheim.TesseractOCR`)
 - Great Sage running on port 8000
 
 **Exact Ready-to-Go Commands**:
 
-1. Start your local PostgreSQL database via Docker:
+1. Start your local MongoDB database via Docker:
    ```bash
    docker-compose up -d
    ```

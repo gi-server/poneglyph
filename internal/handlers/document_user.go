@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"database/sql"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -10,6 +9,9 @@ import (
 	"docunest/internal/models"
 
 	"github.com/gorilla/mux"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 func GetCustomers(w http.ResponseWriter, r *http.Request) {
@@ -23,74 +25,42 @@ func GetCustomers(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query().Get("q")
 	role, _ := r.Context().Value(RoleKey).(string)
 
-	var customers []models.Customer
-	var err error
+	filter := bson.M{}
+	if role != "admin" {
+		filter["workspace_id"] = workspaceID
+	}
 
 	if query != "" {
-		// Limit search query length to prevent oversized queries
 		if len(query) > 100 {
 			query = query[:100]
 		}
-		var rows *sql.Rows
-		var qErr error
-		if role == "admin" {
-			rows, qErr = database.DB.Query(
-				"SELECT id, name, created_at FROM customers WHERE name ILIKE $1 ORDER BY name ASC LIMIT 50",
-				"%"+query+"%",
-			)
-		} else {
-			rows, qErr = database.DB.Query(
-				"SELECT id, name, created_at FROM customers WHERE workspace_id = $1 AND name ILIKE $2 ORDER BY name ASC LIMIT 20",
-				workspaceID, "%"+query+"%",
-			)
-		}
-		if qErr != nil {
-			log.Printf("Failed to query customers: %v", qErr)
-			http.Error(w, "Failed to query customers", http.StatusInternalServerError)
-			return
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var c models.Customer
-			if err = rows.Scan(&c.ID, &c.Name, &c.CreatedAt); err != nil {
-				http.Error(w, "Failed to scan customer", http.StatusInternalServerError)
-				return
-			}
-			customers = append(customers, c)
-		}
-	} else {
-		var rows *sql.Rows
-		var qErr error
-		if role == "admin" {
-			rows, qErr = database.DB.Query(
-				"SELECT id, name, created_at FROM customers ORDER BY name ASC LIMIT 100",
-			)
-		} else {
-			rows, qErr = database.DB.Query(
-				"SELECT id, name, created_at FROM customers WHERE workspace_id = $1 ORDER BY name ASC LIMIT 50",
-				workspaceID,
-			)
-		}
-		if qErr != nil {
-			log.Printf("Failed to query customers: %v", qErr)
-			http.Error(w, "Failed to query customers", http.StatusInternalServerError)
-			return
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var c models.Customer
-			if err = rows.Scan(&c.ID, &c.Name, &c.CreatedAt); err != nil {
-				http.Error(w, "Failed to scan customer", http.StatusInternalServerError)
-				return
-			}
-			customers = append(customers, c)
-		}
+		filter["name"] = bson.M{"$regex": primitive.Regex{Pattern: query, Options: "i"}}
+	}
+
+	limit := int64(50)
+	if role == "admin" {
+		limit = 100
+	}
+
+	opts := options.Find().
+		SetSort(bson.D{{Key: "name", Value: 1}}).
+		SetLimit(limit)
+
+	cursor, err := database.GetCollection("customers").Find(r.Context(), filter, opts)
+	if err != nil {
+		log.Printf("Failed to query customers: %v", err)
+		http.Error(w, "Failed to query customers", http.StatusInternalServerError)
+		return
+	}
+	defer cursor.Close(r.Context())
+
+	customers := []models.Customer{}
+	if err := cursor.All(r.Context(), &customers); err != nil {
+		http.Error(w, "Failed to scan customers", http.StatusInternalServerError)
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if customers == nil {
-		customers = []models.Customer{}
-	}
 	json.NewEncoder(w).Encode(customers)
 }
 
@@ -115,57 +85,39 @@ func GetCustomerDocuments(w http.ResponseWriter, r *http.Request) {
 
 	// Verify customer belongs to the authenticated user (IDOR protection) if not admin
 	if role != "admin" {
-		var exists bool
-		err := database.DB.QueryRow(
-			"SELECT EXISTS(SELECT 1 FROM customers WHERE id = $1 AND workspace_id = $2)",
-			customerID, workspaceID,
-		).Scan(&exists)
-		if err != nil || !exists {
+		count, err := database.GetCollection("customers").CountDocuments(r.Context(), bson.M{
+			"id":           customerID,
+			"workspace_id": workspaceID,
+		})
+		if err != nil || count == 0 {
 			http.Error(w, "Customer not found or access denied", http.StatusNotFound)
 			return
 		}
 	}
 
-	var rows *sql.Rows
-	var err error
-
-	if role == "admin" {
-		rows, err = database.DB.Query(`
-			SELECT id, original_name, status, document_type, extracted_data, person_name, dob, document_id_number, created_at, ocr_text 
-			FROM documents 
-			WHERE customer_id = $1
-			ORDER BY created_at DESC
-			LIMIT 100
-		`, customerID)
-	} else {
-		rows, err = database.DB.Query(`
-			SELECT id, original_name, status, document_type, extracted_data, person_name, dob, document_id_number, created_at, ocr_text 
-			FROM documents 
-			WHERE customer_id = $1
-			ORDER BY created_at DESC
-			LIMIT 100
-		`, customerID)
+	docFilter := bson.M{"customer_id": customerID}
+	if role != "admin" {
+		docFilter["workspace_id"] = workspaceID
 	}
+
+	docOpts := options.Find().
+		SetSort(bson.D{{Key: "created_at", Value: -1}}).
+		SetLimit(100)
+
+	cursor, err := database.GetCollection("documents").Find(r.Context(), docFilter, docOpts)
 	if err != nil {
 		log.Printf("Failed to fetch customer documents: %v", err)
 		http.Error(w, "Failed to fetch documents", http.StatusInternalServerError)
 		return
 	}
-	defer rows.Close()
+	defer cursor.Close(r.Context())
 
-	var documents []models.Document
-	for rows.Next() {
-		var doc models.Document
-		if err := rows.Scan(&doc.ID, &doc.OriginalName, &doc.Status, &doc.DocumentType, &doc.ExtractedData, &doc.PersonName, &doc.DOB, &doc.DocumentIDNumber, &doc.CreatedAt, &doc.OCRText); err != nil {
-			http.Error(w, "Failed to scan document", http.StatusInternalServerError)
-			return
-		}
-		documents = append(documents, doc)
+	documents := []models.Document{}
+	if err := cursor.All(r.Context(), &documents); err != nil {
+		http.Error(w, "Failed to scan documents", http.StatusInternalServerError)
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if documents == nil {
-		documents = []models.Document{}
-	}
 	json.NewEncoder(w).Encode(documents)
 }

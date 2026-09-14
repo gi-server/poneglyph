@@ -1,16 +1,18 @@
 package handlers
 
 import (
-	"crypto/subtle"
 	"encoding/json"
 	"io"
 	"log"
+	"net"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 
 	"docunest/internal/database"
+	"docunest/internal/models"
+
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 // greatSageWebhookPayload matches the JSON contract from Great Sage.
@@ -46,13 +48,9 @@ type jobWebhookPayload struct {
 }
 
 // resolveExtractedData builds the canonical extracted_data JSON from a classification result.
-// If the classification already contains an ExtractedData map, it is used directly.
-// Otherwise, legacy identity fields are assembled into extracted_data for backward compatibility.
-// Returns the JSON bytes for JSONB storage and the legacy projection values.
 func resolveExtractedData(c greatSageClassification) (extractedJSON []byte, personName, dob, docIDNumber *string) {
 	data := c.ExtractedData
 	if data == nil {
-		// Build extracted_data from legacy fields
 		data = make(map[string]interface{})
 		if c.PersonName != nil {
 			data["person_name"] = *c.PersonName
@@ -83,26 +81,24 @@ func resolveExtractedData(c greatSageClassification) (extractedJSON []byte, pers
 	return extractedJSON, personName, dob, docIDNumber
 }
 
-// AnalyzeWebhook receives asynchronous processing results from Great Sage.
-//
-// This route does NOT use the normal user-session AuthMiddleware.
-// Instead, it authenticates Great Sage via the X-Webhook-Secret header.
-//
-// Idempotency: if the document has already been moved past the processing
-// state (e.g., to needs_review, completed, or already failed), the webhook
-// is acknowledged but no further DB mutation occurs.
-func AnalyzeWebhook(w http.ResponseWriter, r *http.Request) {
-	// --- Authenticate the webhook caller ---
-	expectedSecret := os.Getenv("PONEGLYPH_WEBHOOK_SECRET")
-	if expectedSecret == "" {
-		log.Println("WARNING: PONEGLYPH_WEBHOOK_SECRET is not configured")
-		http.Error(w, "Server misconfiguration", http.StatusInternalServerError)
-		return
+// isLocalCaller verifies that the incoming request originates directly from localhost
+// and was not forwarded through a reverse proxy from an external client.
+func isLocalCaller(r *http.Request) bool {
+	if r.Header.Get("X-Forwarded-For") != "" || r.Header.Get("X-Real-IP") != "" {
+		return false
 	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	return host == "127.0.0.1" || host == "::1" || host == "localhost"
+}
 
-	receivedSecret := r.Header.Get("X-Webhook-Secret")
-	if receivedSecret == "" || subtle.ConstantTimeCompare([]byte(receivedSecret), []byte(expectedSecret)) != 1 {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+// AnalyzeWebhook receives asynchronous processing results from Great Sage.
+func AnalyzeWebhook(w http.ResponseWriter, r *http.Request) {
+	// --- Authenticate the webhook caller (internal local only) ---
+	if !isLocalCaller(r) {
+		http.Error(w, "Forbidden: internal only", http.StatusForbidden)
 		return
 	}
 
@@ -131,23 +127,17 @@ func AnalyzeWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// --- Idempotency check ---
-	// Only update documents that are still in "processing" (or "uploaded" if the
-	// status update to "processing" raced). Do not overwrite documents that have
-	// already transitioned to needs_review, completed, or been re-processed.
-	var currentStatus string
-	var workspaceID int
-	err = database.DB.QueryRow(
-		"SELECT status, workspace_id FROM documents WHERE id = $1", payload.DocumentID,
-	).Scan(&currentStatus, &workspaceID)
+	var doc models.Document
+	err = database.GetCollection("documents").FindOne(r.Context(), bson.M{"id": payload.DocumentID}).Decode(&doc)
 	if err != nil {
 		log.Printf("Webhook: document %d not found: %v", payload.DocumentID, err)
 		http.Error(w, "Document not found", http.StatusNotFound)
 		return
 	}
 
-	if currentStatus != "processing" && currentStatus != "uploaded" {
+	if doc.Status != "processing" && doc.Status != "uploaded" {
 		// Document has already been updated — acknowledge but don't mutate.
-		log.Printf("Webhook: document %d is already in status '%s', ignoring duplicate webhook", payload.DocumentID, currentStatus)
+		log.Printf("Webhook: document %d is already in status '%s', ignoring duplicate webhook", payload.DocumentID, doc.Status)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"message": "already processed"})
 		return
@@ -157,24 +147,22 @@ func AnalyzeWebhook(w http.ResponseWriter, r *http.Request) {
 	if payload.Status == "success" {
 		extractedJSON, personName, dob, docIDNumber := resolveExtractedData(payload.Classification)
 
-		_, err = database.DB.Exec(`
-			UPDATE documents
-			SET ocr_text = $1,
-			    document_type = $2,
-			    extracted_data = $3,
-			    person_name = $4,
-			    dob = $5,
-			    document_id_number = $6,
-			    status = 'needs_review'
-			WHERE id = $7 AND status IN ('processing', 'uploaded')
-		`,
-			payload.OCRText,
-			payload.Classification.DocumentType,
-			extractedJSON,
-			personName,
-			dob,
-			docIDNumber,
-			payload.DocumentID,
+		update := bson.M{
+			"$set": bson.M{
+				"ocr_text":           payload.OCRText,
+				"document_type":      payload.Classification.DocumentType,
+				"extracted_data":     extractedJSON,
+				"person_name":        personName,
+				"dob":                dob,
+				"document_id_number": docIDNumber,
+				"status":             "needs_review",
+			},
+		}
+
+		_, err = database.GetCollection("documents").UpdateOne(
+			r.Context(),
+			bson.M{"id": payload.DocumentID, "status": bson.M{"$in": []string{"processing", "uploaded"}}},
+			update,
 		)
 		if err != nil {
 			log.Printf("Webhook: failed to update document %d with success result: %v", payload.DocumentID, err)
@@ -182,22 +170,24 @@ func AnalyzeWebhook(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		log.Printf("Webhook: document %d → needs_review", payload.DocumentID)
-		LogEvent(workspaceID, 0, "document_processing_completed", map[string]interface{}{
+		LogEvent(doc.WorkspaceID, 0, "document_processing_completed", map[string]interface{}{
 			"document_id": payload.DocumentID,
 			"status":      "needs_review",
 		})
 
 	} else {
 		// status == "failed"
-		// Preserve OCR text if available (graceful degradation: OCR succeeded, LLM failed)
-		_, err = database.DB.Exec(`
-			UPDATE documents
-			SET ocr_text = COALESCE($1, ocr_text),
-			    status = 'failed'
-			WHERE id = $2 AND status IN ('processing', 'uploaded')
-		`,
-			payload.OCRText,
-			payload.DocumentID,
+		updateSet := bson.M{
+			"status": "failed",
+		}
+		if payload.OCRText != nil {
+			updateSet["ocr_text"] = payload.OCRText
+		}
+
+		_, err = database.GetCollection("documents").UpdateOne(
+			r.Context(),
+			bson.M{"id": payload.DocumentID, "status": bson.M{"$in": []string{"processing", "uploaded"}}},
+			bson.M{"$set": updateSet},
 		)
 		if err != nil {
 			log.Printf("Webhook: failed to update document %d with failure result: %v", payload.DocumentID, err)
@@ -210,7 +200,7 @@ func AnalyzeWebhook(w http.ResponseWriter, r *http.Request) {
 			errMsg = *payload.ErrorMessage
 		}
 		log.Printf("Webhook: document %d → failed (%s)", payload.DocumentID, errMsg)
-		LogEvent(workspaceID, 0, "document_processing_failed", map[string]interface{}{
+		LogEvent(doc.WorkspaceID, 0, "document_processing_failed", map[string]interface{}{
 			"document_id":   payload.DocumentID,
 			"error_message": errMsg,
 		})
@@ -221,16 +211,10 @@ func AnalyzeWebhook(w http.ResponseWriter, r *http.Request) {
 }
 
 // JobWebhook receives asynchronous processing results from Great Sage's V2 jobs API.
-// It applies the individual file classifications to their respective documents in Poneglyph.
 func JobWebhook(w http.ResponseWriter, r *http.Request) {
-	expectedSecret := os.Getenv("PONEGLYPH_WEBHOOK_SECRET")
-	if expectedSecret == "" {
-		http.Error(w, "Server misconfiguration", http.StatusInternalServerError)
-		return
-	}
-	receivedSecret := r.Header.Get("X-Webhook-Secret")
-	if receivedSecret == "" || subtle.ConstantTimeCompare([]byte(receivedSecret), []byte(expectedSecret)) != 1 {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+	// --- Authenticate the webhook caller (internal local only) ---
+	if !isLocalCaller(r) {
+		http.Error(w, "Forbidden: internal only", http.StatusForbidden)
 		return
 	}
 
@@ -259,67 +243,65 @@ func JobWebhook(w http.ResponseWriter, r *http.Request) {
 			log.Printf("Webhook: invalid filename format '%s'", fileResult.Filename)
 			continue
 		}
-		
+
 		docID, err := strconv.Atoi(parts[0])
 		if err != nil {
 			log.Printf("Webhook: failed to parse document_id from '%s'", fileResult.Filename)
 			continue
 		}
 
-		var currentStatus string
-		var workspaceID int
-		err = database.DB.QueryRow(
-			"SELECT status, workspace_id FROM documents WHERE id = $1 AND job_id = $2", 
-			docID, payload.JobID,
-		).Scan(&currentStatus, &workspaceID)
+		var doc models.Document
+		err = database.GetCollection("documents").FindOne(
+			r.Context(),
+			bson.M{"id": docID, "job_id": payload.JobID},
+		).Decode(&doc)
 		if err != nil {
 			log.Printf("Webhook: document %d not found for job %s: %v", docID, payload.JobID, err)
 			continue
 		}
 
-		if currentStatus != "processing" && currentStatus != "uploaded" {
+		if doc.Status != "processing" && doc.Status != "uploaded" {
 			continue
 		}
 
 		if fileResult.Status == "success" {
 			extractedJSON, personName, dob, docIDNumber := resolveExtractedData(fileResult.Classification)
 
-			_, err = database.DB.Exec(`
-				UPDATE documents
-				SET ocr_text = $1,
-					document_type = $2,
-					extracted_data = $3,
-					person_name = $4,
-					dob = $5,
-					document_id_number = $6,
-					status = 'needs_review'
-				WHERE id = $7
-			`,
-				fileResult.OCRText,
-				fileResult.Classification.DocumentType,
-				extractedJSON,
-				personName,
-				dob,
-				docIDNumber,
-				docID,
+			update := bson.M{
+				"$set": bson.M{
+					"ocr_text":           fileResult.OCRText,
+					"document_type":      fileResult.Classification.DocumentType,
+					"extracted_data":     extractedJSON,
+					"person_name":        personName,
+					"dob":                dob,
+					"document_id_number": docIDNumber,
+					"status":             "needs_review",
+				},
+			}
+
+			_, err = database.GetCollection("documents").UpdateOne(
+				r.Context(),
+				bson.M{"id": docID},
+				update,
 			)
 			if err != nil {
 				log.Printf("Webhook: failed to update document %d: %v", docID, err)
 				continue
 			}
-			LogEvent(workspaceID, 0, "document_processing_completed", map[string]interface{}{
+			LogEvent(doc.WorkspaceID, 0, "document_processing_completed", map[string]interface{}{
 				"document_id": docID,
 				"status":      "needs_review",
 			})
 		} else {
-			_, err = database.DB.Exec(`
-				UPDATE documents
-				SET ocr_text = COALESCE($1, ocr_text),
-					status = 'failed'
-				WHERE id = $2
-			`,
-				fileResult.OCRText,
-				docID,
+			updateSet := bson.M{"status": "failed"}
+			if fileResult.OCRText != nil {
+				updateSet["ocr_text"] = fileResult.OCRText
+			}
+
+			_, err = database.GetCollection("documents").UpdateOne(
+				r.Context(),
+				bson.M{"id": docID},
+				bson.M{"$set": updateSet},
 			)
 			if err != nil {
 				log.Printf("Webhook: failed to update document %d failure: %v", docID, err)
@@ -329,7 +311,7 @@ func JobWebhook(w http.ResponseWriter, r *http.Request) {
 			if fileResult.ErrorMessage != nil {
 				errMsg = *fileResult.ErrorMessage
 			}
-			LogEvent(workspaceID, 0, "document_processing_failed", map[string]interface{}{
+			LogEvent(doc.WorkspaceID, 0, "document_processing_failed", map[string]interface{}{
 				"document_id":   docID,
 				"error_message": errMsg,
 			})

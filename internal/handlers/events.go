@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"docunest/internal/database"
+	"docunest/internal/models"
 )
 
 type SSELogEvent struct {
@@ -25,22 +27,36 @@ var (
 )
 
 func LogEvent(workspaceID int, actorID int, action string, details map[string]interface{}) {
-	detailsJSON, err := json.Marshal(details)
-	if err != nil {
-		log.Printf("Failed to marshal log details: %v", err)
-		detailsJSON = []byte("{}")
+	var dbActorID *int
+	if actorID != 0 {
+		dbActorID = &actorID
 	}
 
-	var dbActorID interface{}
-	if actorID == 0 {
-		dbActorID = nil // System action, no associated user
-	} else {
-		dbActorID = actorID
+	var docID *int
+	if details != nil {
+		if dID, ok := details["document_id"].(int); ok {
+			docID = &dID
+		}
 	}
 
-	_, err = database.DB.Exec("INSERT INTO audit_logs (workspace_id, actor_id, action, details) VALUES ($1, $2, $3, $4)", workspaceID, dbActorID, action, string(detailsJSON))
-	if err != nil {
-		log.Printf("Failed to insert audit log: %v", err)
+	logID, err := database.GetNextSequence("audit_logs")
+	if err == nil {
+		auditRecord := models.AuditLog{
+			ID:          logID,
+			WorkspaceID: workspaceID,
+			ActorID:     dbActorID,
+			DocumentID:  docID,
+			Action:      action,
+			Details:     details,
+			CreatedAt:   time.Now(),
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_, err = database.GetCollection("audit_logs").InsertOne(ctx, auditRecord)
+		if err != nil {
+			log.Printf("Failed to insert audit log: %v", err)
+		}
 	}
 
 	event := SSELogEvent{
@@ -105,4 +121,3 @@ func StreamLogs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
-

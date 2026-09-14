@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,8 +12,11 @@ import (
 	"time"
 
 	"docunest/internal/database"
+	"docunest/internal/models"
 	"docunest/internal/services"
 	"docunest/internal/storage"
+
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 // uploadRateLimiter is a per-IP token bucket.
@@ -90,27 +94,15 @@ func UploadDocument(w http.ResponseWriter, r *http.Request) {
 		}
 
 		role, _ := r.Context().Value(RoleKey).(string)
+		custFilter := bson.M{"id": customerID}
 		if role != "admin" {
-			// Verify the customer belongs to this user before accepting the ID
-			var exists bool
-			err := database.DB.QueryRow(
-				"SELECT EXISTS(SELECT 1 FROM customers WHERE id = $1 AND workspace_id = $2)",
-				customerID, workspaceID,
-			).Scan(&exists)
-			if err != nil || !exists {
-				http.Error(w, "Customer not found or access denied", http.StatusForbidden)
-				return
-			}
-		} else {
-			var exists bool
-			err := database.DB.QueryRow(
-				"SELECT EXISTS(SELECT 1 FROM customers WHERE id = $1)",
-				customerID,
-			).Scan(&exists)
-			if err != nil || !exists {
-				http.Error(w, "Customer not found", http.StatusForbidden)
-				return
-			}
+			custFilter["workspace_id"] = workspaceID
+		}
+
+		count, err := database.GetCollection("customers").CountDocuments(r.Context(), custFilter)
+		if err != nil || count == 0 {
+			http.Error(w, "Customer not found or access denied", http.StatusForbidden)
+			return
 		}
 	}
 
@@ -123,7 +115,7 @@ func UploadDocument(w http.ResponseWriter, r *http.Request) {
 			log.Printf("Failed to open uploaded file: %v", err)
 			continue
 		}
-		
+
 		// MIME Validation: read first 512 bytes to determine real content type
 		buffer := make([]byte, 512)
 		n, err := file.Read(buffer)
@@ -157,15 +149,31 @@ func UploadDocument(w http.ResponseWriter, r *http.Request) {
 			originalName = originalName[:255]
 		}
 
-		var docID int
 		var cID *string
 		if customerType == "existing" {
 			cID = &customerID
 		}
 
-		query := `INSERT INTO documents (workspace_id, filename, filepath, original_name, status, customer_id) 
-				  VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`
-		err = database.DB.QueryRow(query, workspaceID, newFilename, filePath, originalName, "uploaded", cID).Scan(&docID)
+		docID, err := database.GetNextSequence("documents")
+		if err != nil {
+			os.Remove(filePath)
+			log.Printf("Failed to generate document ID sequence: %v", err)
+			continue
+		}
+
+		docRecord := models.Document{
+			ID:            docID,
+			WorkspaceID:   workspaceID,
+			Filename:      newFilename,
+			Filepath:      filePath,
+			OriginalName:  originalName,
+			Status:        "uploaded",
+			CustomerID:    cID,
+			ExtractedData: json.RawMessage("{}"),
+			CreatedAt:     time.Now(),
+		}
+
+		_, err = database.GetCollection("documents").InsertOne(r.Context(), docRecord)
 		if err != nil {
 			os.Remove(filePath)
 			log.Printf("Failed to create document record: %v", err)
@@ -204,12 +212,18 @@ func UploadDocument(w http.ResponseWriter, r *http.Request) {
 // sendJobToGreatSage submits a batch of documents to Great Sage
 // for asynchronous OCR and AI classification processing using V2 APIs.
 func sendJobToGreatSage(docs []services.DocumentInfo) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	var ids []int
+	for _, doc := range docs {
+		ids = append(ids, doc.ID)
+	}
+
 	client, err := services.NewGreatSageClient()
 	if err != nil {
 		log.Printf("Great Sage client error: %v", err)
-		for _, doc := range docs {
-			database.DB.Exec("UPDATE documents SET status = 'failed' WHERE id = $1", doc.ID)
-		}
+		database.GetCollection("documents").UpdateMany(ctx, bson.M{"id": bson.M{"$in": ids}}, bson.M{"$set": bson.M{"status": "failed"}})
 		return
 	}
 
@@ -222,17 +236,17 @@ func sendJobToGreatSage(docs []services.DocumentInfo) {
 	jobID, err := client.SubmitJob(docs, webhookURL)
 	if err != nil {
 		log.Printf("Failed to submit job to Great Sage: %v", err)
-		for _, doc := range docs {
-			database.DB.Exec("UPDATE documents SET status = 'failed' WHERE id = $1", doc.ID)
-		}
+		database.GetCollection("documents").UpdateMany(ctx, bson.M{"id": bson.M{"$in": ids}}, bson.M{"$set": bson.M{"status": "failed"}})
 		return
 	}
 
 	// Job submitted — mark all as processing and store the job ID
-	for _, doc := range docs {
-		_, err = database.DB.Exec("UPDATE documents SET status = 'processing', job_id = $1 WHERE id = $2", jobID, doc.ID)
-		if err != nil {
-			log.Printf("Document %d: failed to update status to processing: %v", doc.ID, err)
-		}
+	_, err = database.GetCollection("documents").UpdateMany(
+		ctx,
+		bson.M{"id": bson.M{"$in": ids}},
+		bson.M{"$set": bson.M{"status": "processing", "job_id": jobID}},
+	)
+	if err != nil {
+		log.Printf("Failed to update status to processing for job %s: %v", jobID, err)
 	}
 }

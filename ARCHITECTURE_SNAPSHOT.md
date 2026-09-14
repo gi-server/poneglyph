@@ -10,10 +10,10 @@ This monorepo pair implements **DocuNest** — a private, local-first document m
 
 | Repo | Language | Role |
 |---|---|---|
-| **poneglyph** | Go 1.26 | Core web application — user sessions, document lifecycle, PostgreSQL, human-review workflow, static UI |
+| **poneglyph** | Go 1.26 | Core web application — user sessions, document lifecycle, MongoDB, human-review workflow, static UI |
 | **great-sage** | Python 3 / FastAPI | Document intelligence engine — OCR (Tesseract + PyMuPDF), AI classification (Ollama), async job queue, SQLite |
 
-At runtime a user uploads a document through the **poneglyph** Go server; poneglyph writes the file to disk, stores a record in PostgreSQL, then calls Great Sage's REST API to submit it for processing.  Great Sage performs OCR, passes the extracted text to a local Ollama LLM, and fires a webhook back to poneglyph once classification is complete.  A human operator then reviews the AI-extracted fields before they are committed to the customer profile.
+At runtime a user uploads a document through the **poneglyph** Go server; poneglyph writes the file to disk, stores a record in MongoDB, then calls Great Sage's REST API to submit it for processing.  Great Sage performs OCR, passes the extracted text to a local Ollama LLM, and fires a webhook back to poneglyph once classification is complete.  A human operator then reviews the AI-extracted fields before they are committed to the customer profile.
 
 ---
 
@@ -28,7 +28,7 @@ poneglyph/
 │       └── main.go                  # Entry point — router wiring, middleware, server start
 ├── internal/
 │   ├── database/
-│   │   └── db.go                    # PostgreSQL connection, schema init, seed admin
+│   │   └── db.go                    # MongoDB connection, schema indexes, seed admin, sequence counters
 │   ├── handlers/
 │   │   ├── admin.go                 # Admin-only: user management, DB wipe, log streaming
 │   │   ├── auth.go                  # Login/logout, JWT issuance, AuthMiddleware, brute-force lockout
@@ -42,7 +42,7 @@ poneglyph/
 │   │   ├── webhook.go               # Receives Great Sage callbacks, writes AI results to DB
 │   │   └── webhook_test.go          # Unit tests for webhook handler
 │   ├── models/
-│   │   └── models.go                # Go structs: User, Customer, Document, AuditLog, DocumentShare
+│   │   └── models.go                # Go structs: User, Customer, Document, AuditLog, DocumentShare (BSON/JSON)
 │   ├── services/
 │   │   ├── greatsage.go             # HTTP client for submitting docs to Great Sage API
 │   │   └── greatsage_test.go        # Unit tests for GreatSageClient
@@ -74,7 +74,7 @@ poneglyph/
 │   ├── merge.py                     # File merge utility
 │   └── update_tables.py             # DB table update script
 ├── uploads/                         # Runtime: uploaded documents stored by server (gitignored)
-├── docker-compose.yml               # PostgreSQL service definition
+├── docker-compose.yml               # MongoDB service definition
 ├── go.mod                           # Go module manifest
 ├── go.sum                           # Go dependency checksums
 ├── start.ps1                        # Windows dev-start script

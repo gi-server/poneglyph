@@ -1,15 +1,19 @@
 package handlers
 
 import (
+	"crypto/rand"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
+	"time"
 
 	"docunest/internal/database"
 	"docunest/internal/models"
 
 	"github.com/gorilla/mux"
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 // resolveCustomerName extracts a suitable customer display name from extracted_data.
@@ -41,25 +45,19 @@ func ConfirmDocument(w http.ResponseWriter, r *http.Request) {
 
 	role, _ := r.Context().Value(RoleKey).(string)
 
-	// Verify the document belongs to this user and is pending review
-	var currentStatus string
-	var errDB error
-	if role == "admin" {
-		errDB = database.DB.QueryRow(
-			"SELECT status FROM documents WHERE id = $1",
-			docID,
-		).Scan(&currentStatus)
-	} else {
-		errDB = database.DB.QueryRow(
-			"SELECT status FROM documents WHERE id = $1 AND workspace_id = $2",
-			docID, workspaceID,
-		).Scan(&currentStatus)
+	// Verify the document belongs to this workspace and is pending review
+	docFilter := bson.M{"id": docID}
+	if role != "admin" {
+		docFilter["workspace_id"] = workspaceID
 	}
-	if errDB != nil {
+
+	var doc models.Document
+	err = database.GetCollection("documents").FindOne(r.Context(), docFilter).Decode(&doc)
+	if err != nil {
 		http.Error(w, "Document not found or access denied", http.StatusNotFound)
 		return
 	}
-	if currentStatus != "needs_review" {
+	if doc.Status != "needs_review" {
 		http.Error(w, "Document is not pending review", http.StatusBadRequest)
 		return
 	}
@@ -130,13 +128,19 @@ func ConfirmDocument(w http.ResponseWriter, r *http.Request) {
 	finalCustomerID := req.CustomerID
 
 	if finalCustomerID == "new" || finalCustomerID == "" {
-		// Create a new customer using a cryptographic UUID from the DB serial
-		// The name is derived from extracted_data — user has already verified it
-		var newID string
-		err = database.DB.QueryRow(
-			"INSERT INTO customers (id, workspace_id, name) VALUES (gen_random_uuid()::text, $1, $2) RETURNING id",
-			workspaceID, customerName,
-		).Scan(&newID)
+		// Create a new customer using a cryptographic UUID
+		b := make([]byte, 16)
+		rand.Read(b)
+		newID := fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
+
+		newCustomer := models.Customer{
+			ID:          newID,
+			WorkspaceID: workspaceID,
+			Name:        customerName,
+			CreatedAt:   time.Now(),
+		}
+
+		_, err = database.GetCollection("customers").InsertOne(r.Context(), newCustomer)
 		if err != nil {
 			log.Printf("Failed to create new customer: %v", err)
 			http.Error(w, "Failed to create new customer", http.StatusInternalServerError)
@@ -144,31 +148,30 @@ func ConfirmDocument(w http.ResponseWriter, r *http.Request) {
 		}
 		finalCustomerID = newID
 	} else if role != "admin" {
-		// IDOR check: ensure the provided customer_id belongs to this user
-		var exists bool
-		err = database.DB.QueryRow(
-			"SELECT EXISTS(SELECT 1 FROM customers WHERE id = $1 AND workspace_id = $2)",
-			finalCustomerID, workspaceID,
-		).Scan(&exists)
-		if err != nil || !exists {
+		// IDOR check: ensure the provided customer_id belongs to this workspace
+		count, err := database.GetCollection("customers").CountDocuments(r.Context(), bson.M{
+			"id":           finalCustomerID,
+			"workspace_id": workspaceID,
+		})
+		if err != nil || count == 0 {
 			http.Error(w, "Customer not found or access denied", http.StatusForbidden)
 			return
 		}
 	}
 
-	if role == "admin" {
-		_, err = database.DB.Exec(`
-			UPDATE documents 
-			SET document_type = $1, extracted_data = $2, person_name = $3, dob = $4, document_id_number = $5, customer_id = $6, status = 'completed'
-			WHERE id = $7
-		`, req.DocumentType, extractedJSON, personName, dob, docIDNumber, finalCustomerID, docID)
-	} else {
-		_, err = database.DB.Exec(`
-			UPDATE documents 
-			SET document_type = $1, extracted_data = $2, person_name = $3, dob = $4, document_id_number = $5, customer_id = $6, status = 'completed'
-			WHERE id = $7 AND workspace_id = $8
-		`, req.DocumentType, extractedJSON, personName, dob, docIDNumber, finalCustomerID, docID, workspaceID)
+	updateDoc := bson.M{
+		"$set": bson.M{
+			"document_type":      req.DocumentType,
+			"extracted_data":     extractedJSON,
+			"person_name":        personName,
+			"dob":                dob,
+			"document_id_number": docIDNumber,
+			"customer_id":        finalCustomerID,
+			"status":             "completed",
+		},
 	}
+
+	_, err = database.GetCollection("documents").UpdateOne(r.Context(), docFilter, updateDoc)
 	if err != nil {
 		log.Printf("Failed to update document %d: %v", docID, err)
 		http.Error(w, "Failed to update document", http.StatusInternalServerError)

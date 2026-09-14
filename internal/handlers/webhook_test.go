@@ -5,13 +5,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 )
 
 // --- Helper to build a webhook request ---
 
-func makeWebhookRequest(t *testing.T, payload interface{}, secret string) *http.Request {
+func makeWebhookRequest(t *testing.T, payload interface{}) *http.Request {
 	t.Helper()
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -19,66 +18,80 @@ func makeWebhookRequest(t *testing.T, payload interface{}, secret string) *http.
 	}
 	req := httptest.NewRequest("POST", "/api/internal/webhook/analyze", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	if secret != "" {
-		req.Header.Set("X-Webhook-Secret", secret)
-	}
+	req.RemoteAddr = "127.0.0.1:54321" // local by default for unit tests
 	return req
 }
 
 func strPtr(s string) *string { return &s }
 
-// --- Authentication Tests ---
+// --- Authentication Tests (Local Only) ---
 
-func TestAnalyzeWebhook_MissingSecret(t *testing.T) {
-	t.Setenv("PONEGLYPH_WEBHOOK_SECRET", "correct-secret")
-
-	payload := map[string]interface{}{"document_id": 1, "status": "success"}
-	req := makeWebhookRequest(t, payload, "")
+func TestAnalyzeWebhook_LocalhostAllowed(t *testing.T) {
+	// Missing document_id in payload, but auth should pass and fail on payload validation (400) rather than 403
+	payload := map[string]interface{}{"status": "success"}
+	req := makeWebhookRequest(t, payload)
+	req.RemoteAddr = "127.0.0.1:54321"
 	rr := httptest.NewRecorder()
 
 	AnalyzeWebhook(rr, req)
 
-	if rr.Code != http.StatusUnauthorized {
-		t.Errorf("expected 401, got %d", rr.Code)
+	if rr.Code == http.StatusForbidden {
+		t.Errorf("expected localhost caller to pass authentication, but got 403")
+	}
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 (validation error), got %d", rr.Code)
 	}
 }
 
-func TestAnalyzeWebhook_WrongSecret(t *testing.T) {
-	t.Setenv("PONEGLYPH_WEBHOOK_SECRET", "correct-secret")
-
-	payload := map[string]interface{}{"document_id": 1, "status": "success"}
-	req := makeWebhookRequest(t, payload, "wrong-secret")
+func TestAnalyzeWebhook_IPv6LocalhostAllowed(t *testing.T) {
+	payload := map[string]interface{}{"status": "success"}
+	req := makeWebhookRequest(t, payload)
+	req.RemoteAddr = "[::1]:54321"
 	rr := httptest.NewRecorder()
 
 	AnalyzeWebhook(rr, req)
 
-	if rr.Code != http.StatusUnauthorized {
-		t.Errorf("expected 401, got %d", rr.Code)
+	if rr.Code == http.StatusForbidden {
+		t.Errorf("expected IPv6 localhost caller to pass authentication, but got 403")
+	}
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 (validation error), got %d", rr.Code)
 	}
 }
 
-func TestAnalyzeWebhook_UnconfiguredSecret(t *testing.T) {
-	os.Unsetenv("PONEGLYPH_WEBHOOK_SECRET")
-
+func TestAnalyzeWebhook_ExternalIPForbidden(t *testing.T) {
 	payload := map[string]interface{}{"document_id": 1, "status": "success"}
-	req := makeWebhookRequest(t, payload, "any-secret")
+	req := makeWebhookRequest(t, payload)
+	req.RemoteAddr = "192.168.1.50:54321"
 	rr := httptest.NewRecorder()
 
 	AnalyzeWebhook(rr, req)
 
-	if rr.Code != http.StatusInternalServerError {
-		t.Errorf("expected 500 (misconfiguration), got %d", rr.Code)
+	if rr.Code != http.StatusForbidden {
+		t.Errorf("expected 403 Forbidden for external caller, got %d", rr.Code)
+	}
+}
+
+func TestAnalyzeWebhook_ProxiedLocalhostForbidden(t *testing.T) {
+	payload := map[string]interface{}{"document_id": 1, "status": "success"}
+	req := makeWebhookRequest(t, payload)
+	req.RemoteAddr = "127.0.0.1:54321"
+	req.Header.Set("X-Forwarded-For", "203.0.113.195") // External client through proxy
+	rr := httptest.NewRecorder()
+
+	AnalyzeWebhook(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Errorf("expected 403 Forbidden for proxied request, got %d", rr.Code)
 	}
 }
 
 // --- Payload Validation Tests ---
 
 func TestAnalyzeWebhook_MalformedJSON(t *testing.T) {
-	t.Setenv("PONEGLYPH_WEBHOOK_SECRET", "test-secret")
-
 	req := httptest.NewRequest("POST", "/api/internal/webhook/analyze", bytes.NewReader([]byte("not valid json")))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Webhook-Secret", "test-secret")
+	req.RemoteAddr = "127.0.0.1:54321"
 	rr := httptest.NewRecorder()
 
 	AnalyzeWebhook(rr, req)
@@ -89,10 +102,8 @@ func TestAnalyzeWebhook_MalformedJSON(t *testing.T) {
 }
 
 func TestAnalyzeWebhook_MissingDocumentID(t *testing.T) {
-	t.Setenv("PONEGLYPH_WEBHOOK_SECRET", "test-secret")
-
 	payload := map[string]interface{}{"status": "success"}
-	req := makeWebhookRequest(t, payload, "test-secret")
+	req := makeWebhookRequest(t, payload)
 	rr := httptest.NewRecorder()
 
 	AnalyzeWebhook(rr, req)
@@ -103,10 +114,8 @@ func TestAnalyzeWebhook_MissingDocumentID(t *testing.T) {
 }
 
 func TestAnalyzeWebhook_InvalidStatus(t *testing.T) {
-	t.Setenv("PONEGLYPH_WEBHOOK_SECRET", "test-secret")
-
 	payload := map[string]interface{}{"document_id": 1, "status": "invalid"}
-	req := makeWebhookRequest(t, payload, "test-secret")
+	req := makeWebhookRequest(t, payload)
 	rr := httptest.NewRecorder()
 
 	AnalyzeWebhook(rr, req)
@@ -117,10 +126,8 @@ func TestAnalyzeWebhook_InvalidStatus(t *testing.T) {
 }
 
 func TestAnalyzeWebhook_ZeroDocumentID(t *testing.T) {
-	t.Setenv("PONEGLYPH_WEBHOOK_SECRET", "test-secret")
-
 	payload := map[string]interface{}{"document_id": 0, "status": "success"}
-	req := makeWebhookRequest(t, payload, "test-secret")
+	req := makeWebhookRequest(t, payload)
 	rr := httptest.NewRecorder()
 
 	AnalyzeWebhook(rr, req)
@@ -236,18 +243,11 @@ func TestWebhookPayload_OCRSuccessLLMFailure(t *testing.T) {
 
 // --- Note: The following tests require database.DB to be initialized ---
 // They will be skipped if the DB is not available.
-// For full integration testing, run with a live PostgreSQL instance.
+// For full integration testing, run with a live MongoDB instance.
 
 // TestAnalyzeWebhook_UnknownDocumentID tests that a webhook for a
 // non-existent document returns 404.
-// This test requires a database connection.
 func TestAnalyzeWebhook_UnknownDocumentID(t *testing.T) {
-	t.Setenv("PONEGLYPH_WEBHOOK_SECRET", "test-secret")
-
-	// Without DB initialized, QueryRow will panic or fail.
-	// We'll test that the handler correctly returns 404 when document is not found.
-	// This test is a unit test of the auth + validation path, not the DB path.
-	// The DB query will fail, which should result in a 404.
 	defer func() {
 		if r := recover(); r != nil {
 			t.Skip("Skipping: database not initialized (expected in unit test environment)")
@@ -262,7 +262,7 @@ func TestAnalyzeWebhook_UnknownDocumentID(t *testing.T) {
 			"document_type": "Invoice",
 		},
 	}
-	req := makeWebhookRequest(t, payload, "test-secret")
+	req := makeWebhookRequest(t, payload)
 	rr := httptest.NewRecorder()
 
 	AnalyzeWebhook(rr, req)

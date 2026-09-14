@@ -7,9 +7,11 @@ import (
 
 	"docunest/internal/database"
 	"docunest/internal/handlers"
+	"docunest/internal/models"
 
 	"github.com/gorilla/mux"
 	"github.com/joho/godotenv"
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 func main() {
@@ -43,7 +45,7 @@ func main() {
 	api.HandleFunc("/login", handlers.Login).Methods("POST")
 	api.HandleFunc("/share/{token}", handlers.ViewSharedDocument).Methods("GET")
 
-	// Internal service-to-service routes (authenticated via X-Webhook-Secret, not JWT)
+	// Internal service-to-service routes (local only, not JWT)
 	api.HandleFunc("/internal/webhook/analyze", handlers.AnalyzeWebhook).Methods("POST")
 	api.HandleFunc("/internal/webhook/jobs", handlers.JobWebhook).Methods("POST")
 
@@ -52,8 +54,13 @@ func main() {
 	protected.Use(handlers.AuthMiddleware)
 	protected.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
 		userID, _ := r.Context().Value(handlers.UserIDKey).(int)
-		var role, username string
-		database.DB.QueryRow("SELECT role, username FROM users WHERE id = $1", userID).Scan(&role, &username)
+		var user models.User
+		err := database.GetCollection("users").FindOne(r.Context(), bson.M{"id": userID}).Decode(&user)
+		role := user.Role
+		username := user.Username
+		if err != nil {
+			role = "user"
+		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "role": role, "username": username})
 	}).Methods("GET")

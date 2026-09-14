@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -11,9 +10,12 @@ import (
 	"time"
 
 	"docunest/internal/database"
+	"docunest/internal/models"
 
 	"github.com/alexedwards/argon2id"
 	"github.com/golang-jwt/jwt/v5"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 var jwtKey []byte
@@ -120,8 +122,11 @@ func clearLoginAttempts(ip string) {
 // SeedAdminUser only inserts the admin if no users exist.
 // It does NOT overwrite existing passwords on every startup.
 func SeedAdminUser() {
-	var count int
-	err := database.DB.QueryRow("SELECT COUNT(*) FROM users").Scan(&count)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	usersColl := database.GetCollection("users")
+	count, err := usersColl.CountDocuments(ctx, bson.M{})
 	if err != nil {
 		log.Printf("Error checking users count: %v", err)
 		return
@@ -133,7 +138,20 @@ func SeedAdminUser() {
 			log.Printf("Error hashing password: %v", err)
 			return
 		}
-		_, err = database.DB.Exec("INSERT INTO users (username, password_hash, role) VALUES ($1, $2, 'admin')", "admin", hash)
+		adminID, err := database.GetNextSequence("users")
+		if err != nil {
+			log.Printf("Error getting sequence for admin: %v", err)
+			return
+		}
+		adminUser := models.User{
+			ID:           adminID,
+			Username:     "admin",
+			PasswordHash: hash,
+			Role:         "admin",
+			IsDisabled:   false,
+			CreatedAt:    time.Now(),
+		}
+		_, err = usersColl.InsertOne(ctx, adminUser)
 		if err != nil {
 			log.Printf("Error seeding admin user: %v", err)
 			return
@@ -141,7 +159,7 @@ func SeedAdminUser() {
 		log.Println("Seeded default admin user. IMPORTANT: Change the default password immediately.")
 	} else {
 		// Ensure the admin user has the admin role (for migrations)
-		database.DB.Exec("UPDATE users SET role = 'admin' WHERE username = 'admin'")
+		usersColl.UpdateOne(ctx, bson.M{"username": "admin"}, bson.M{"$set": bson.M{"role": "admin"}})
 	}
 
 	// Seed test users
@@ -150,11 +168,23 @@ func SeedAdminUser() {
 }
 
 func seedTestUser(username, password string) {
-	var count int
-	database.DB.QueryRow("SELECT COUNT(*) FROM users WHERE username = $1", username).Scan(&count)
-	if count == 0 {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	usersColl := database.GetCollection("users")
+	count, err := usersColl.CountDocuments(ctx, bson.M{"username": username})
+	if err == nil && count == 0 {
 		hash, _ := argon2id.CreateHash(password, argon2id.DefaultParams)
-		database.DB.Exec("INSERT INTO users (username, password_hash, role) VALUES ($1, $2, 'user')", username, hash)
+		userID, _ := database.GetNextSequence("users")
+		u := models.User{
+			ID:           userID,
+			Username:     username,
+			PasswordHash: hash,
+			Role:         "user",
+			IsDisabled:   false,
+			CreatedAt:    time.Now(),
+		}
+		usersColl.InsertOne(ctx, u)
 		log.Printf("Seeded test user: %s", username)
 	}
 }
@@ -180,12 +210,10 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var storedHash string
-	var userID int
-	var isDisabled bool
-	err = database.DB.QueryRow("SELECT id, password_hash, is_disabled FROM users WHERE username = $1", creds.Username).Scan(&userID, &storedHash, &isDisabled)
+	var user models.User
+	err = database.GetCollection("users").FindOne(r.Context(), bson.M{"username": creds.Username}).Decode(&user)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if err == mongo.ErrNoDocuments {
 			// Use constant-time comparison path (avoid timing oracle: still call ComparePasswordAndHash)
 			argon2id.ComparePasswordAndHash(creds.Password, "$argon2id$v=19$m=65536,t=1,p=2$deadbeef$deadbeef")
 			recordFailedLogin(clientIP)
@@ -196,12 +224,12 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if isDisabled {
+	if user.IsDisabled {
 		http.Error(w, "Account is disabled", http.StatusForbidden)
 		return
 	}
 
-	match, err := argon2id.ComparePasswordAndHash(creds.Password, storedHash)
+	match, err := argon2id.ComparePasswordAndHash(creds.Password, user.PasswordHash)
 	if err != nil || !match {
 		recordFailedLogin(clientIP)
 		http.Error(w, "Invalid username or password", http.StatusUnauthorized)
@@ -212,7 +240,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 
 	expirationTime := time.Now().Add(24 * time.Hour)
 	claims := &Claims{
-		UserID:   userID,
+		UserID:   user.ID,
 		Username: creds.Username,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expirationTime),
@@ -287,18 +315,17 @@ func AuthMiddleware(next http.Handler) http.Handler {
 
 		ctx := context.WithValue(r.Context(), UserIDKey, claims.UserID)
 
-		var role string
-		var adminID sql.NullInt64
-		err = database.DB.QueryRow("SELECT role, admin_id FROM users WHERE id = $1", claims.UserID).Scan(&role, &adminID)
+		var user models.User
+		err = database.GetCollection("users").FindOne(r.Context(), bson.M{"id": claims.UserID}).Decode(&user)
 		if err == nil {
-			ctx = context.WithValue(ctx, RoleKey, role)
-			
+			ctx = context.WithValue(ctx, RoleKey, user.Role)
+
 			// Resolve WorkspaceID
 			var workspaceID int
-			if role == "admin" {
+			if user.Role == "admin" {
 				workspaceID = claims.UserID
-			} else if adminID.Valid {
-				workspaceID = int(adminID.Int64)
+			} else if user.AdminID != nil && *user.AdminID > 0 {
+				workspaceID = *user.AdminID
 			} else {
 				// Fallback, should not happen for properly created users
 				workspaceID = claims.UserID
