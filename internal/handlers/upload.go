@@ -7,232 +7,231 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
-	"docunest/internal/database"
-	"docunest/internal/services"
-	"docunest/internal/storage"
+	"poneglyph/internal/database"
+	"poneglyph/internal/models"
+
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
-// uploadRateLimiter is a per-IP token bucket.
-// We store the last-upload time per IP, pruned periodically so it doesn't grow forever.
+const (
+	// MaxFileCount is the maximum number of files allowed in a single upload request.
+	MaxFileCount = 10
+	// MaxFileSize is the maximum size allowed for any single file (25 MB).
+	MaxFileSize = 25 * 1024 * 1024 // 25 MB
+	// MaxTotalRequestBytes limits the total request body (260 MB).
+	MaxTotalRequestBytes = 260 * 1024 * 1024
+)
+
+// allowedExtensions defines the file extensions accepted for upload.
+var allowedExtensions = map[string]string{
+	// Images
+	".jpg":  "image/jpeg",
+	".jpeg": "image/jpeg",
+	".png":  "image/png",
+	".webp": "image/webp",
+	".gif":  "image/gif",
+	".tiff": "image/tiff",
+	".tif":  "image/tiff",
+	".bmp":  "image/bmp",
+	// PDF
+	".pdf": "application/pdf",
+	// Word Documents
+	".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+	".doc":  "application/msword",
+}
+
+// uploadRateLimiter prevents aggressive spamming.
 var (
 	uploadRateLimiter = make(map[string]time.Time)
 	limiterMutex      sync.Mutex
-	uploadRateLimit   = 5 * time.Second
+	uploadRateLimit   = 1 * time.Second
 )
 
-// pruneRateLimiter removes entries older than 1 minute to prevent unbounded memory growth.
-func pruneRateLimiter() {
+// ResetUploadRateLimiter clears the upload rate limiter cache (used in testing).
+func ResetUploadRateLimiter() {
 	limiterMutex.Lock()
 	defer limiterMutex.Unlock()
-	cutoff := time.Now().Add(-1 * time.Minute)
-	for ip, t := range uploadRateLimiter {
-		if t.Before(cutoff) {
-			delete(uploadRateLimiter, ip)
-		}
-	}
+	uploadRateLimiter = make(map[string]time.Time)
 }
 
-func init() {
-	// Prune the rate limiter map every 5 minutes to prevent memory leaks.
-	go func() {
-		for range time.Tick(5 * time.Minute) {
-			pruneRateLimiter()
-		}
-	}()
+func isAllowedFileExtension(filename string) bool {
+	ext := strings.ToLower(filepath.Ext(filename))
+	_, ok := allowedExtensions[ext]
+	return ok
 }
 
-const maxUploadBytes = 15 << 20 // 15 MB hard cap
-
-func UploadDocument(w http.ResponseWriter, r *http.Request) {
-	workspaceID, _ := r.Context().Value(WorkspaceIDKey).(int)
-	_, ok := r.Context().Value(UserIDKey).(int)
-	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+// UploadBatch handles multi-file uploads (max 10 files, max 25MB each).
+// It stores files in ./uploads/<document_id>/ and records the job in MongoDB.
+func UploadBatch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	// Per-IP rate limiting
+	// Per-IP rate limiting (1 second cooldown)
 	clientIP := r.RemoteAddr
 	limiterMutex.Lock()
 	lastUpload, exists := uploadRateLimiter[clientIP]
 	if exists && time.Since(lastUpload) < uploadRateLimit {
 		limiterMutex.Unlock()
-		http.Error(w, "Rate limit exceeded. Please wait before uploading again.", http.StatusTooManyRequests)
+		log.Printf("[JOB] REJECTED: Upload rate limit exceeded for %s", clientIP)
+		http.Error(w, "Rate limit exceeded. Please wait a moment before uploading again.", http.StatusTooManyRequests)
 		return
 	}
 	uploadRateLimiter[clientIP] = time.Now()
 	limiterMutex.Unlock()
 
-	// Hard limit on request body size before parsing
-	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
-	if err := r.ParseMultipartForm(10 << 20); err != nil {
-		http.Error(w, "File too large or invalid form data", http.StatusBadRequest)
+	log.Printf("[JOB] Incoming upload request from %s", clientIP)
+
+	// Limit total body size to prevent memory exhaustion
+	r.Body = http.MaxBytesReader(w, r.Body, MaxTotalRequestBytes)
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		log.Printf("[JOB] REJECTED: Multipart form error from %s: %v", clientIP, err)
+		http.Error(w, "File too large or invalid multipart form data", http.StatusBadRequest)
 		return
 	}
 
-	files := r.MultipartForm.File["documents"]
-	if len(files) == 0 {
-		http.Error(w, "No documents provided", http.StatusBadRequest)
+	// Support form field names "files", "documents", or "file"
+	fileHeaders := r.MultipartForm.File["files"]
+	if len(fileHeaders) == 0 {
+		fileHeaders = r.MultipartForm.File["documents"]
+	}
+	if len(fileHeaders) == 0 {
+		fileHeaders = r.MultipartForm.File["file"]
+	}
+	if len(fileHeaders) == 0 {
+		for _, headers := range r.MultipartForm.File {
+			fileHeaders = append(fileHeaders, headers...)
+		}
+	}
+
+	// Validation 1: At least 1 file
+	if len(fileHeaders) == 0 {
+		log.Printf("[JOB] REJECTED from %s: No files provided in request", clientIP)
+		http.Error(w, "No files provided. Please select at least one file to upload.", http.StatusBadRequest)
 		return
 	}
 
-	// Customer Authorization: if an existing customer_id is provided, verify ownership
-	customerType := r.FormValue("customer_type")
-	customerID := r.FormValue("customer_id")
+	// Validation 2: Max 10 files
+	if len(fileHeaders) > MaxFileCount {
+		errMsg := fmt.Sprintf("Too many files: maximum allowed is %d files per batch, but received %d", MaxFileCount, len(fileHeaders))
+		log.Printf("[JOB] REJECTED from %s: %s", clientIP, errMsg)
+		http.Error(w, errMsg, http.StatusBadRequest)
+		return
+	}
 
-	if customerType == "existing" {
-		if customerID == "" {
-			http.Error(w, "Customer ID is required for existing customer", http.StatusBadRequest)
+	// Validation 3 & 4: Check each file's size and extension before writing anything to disk
+	for _, fh := range fileHeaders {
+		if fh.Size > MaxFileSize {
+			errMsg := fmt.Sprintf("File '%s' is too large (%0.2f MB). Maximum allowed size per file is 25 MB.", fh.Filename, float64(fh.Size)/(1024*1024))
+			log.Printf("[JOB] REJECTED from %s: %s", clientIP, errMsg)
+			http.Error(w, errMsg, http.StatusBadRequest)
 			return
 		}
 
-		role, _ := r.Context().Value(RoleKey).(string)
-		if role != "admin" {
-			// Verify the customer belongs to this user before accepting the ID
-			var exists bool
-			err := database.DB.QueryRow(
-				"SELECT EXISTS(SELECT 1 FROM customers WHERE id = $1 AND workspace_id = $2)",
-				customerID, workspaceID,
-			).Scan(&exists)
-			if err != nil || !exists {
-				http.Error(w, "Customer not found or access denied", http.StatusForbidden)
-				return
-			}
-		} else {
-			var exists bool
-			err := database.DB.QueryRow(
-				"SELECT EXISTS(SELECT 1 FROM customers WHERE id = $1)",
-				customerID,
-			).Scan(&exists)
-			if err != nil || !exists {
-				http.Error(w, "Customer not found", http.StatusForbidden)
-				return
-			}
+		if !isAllowedFileExtension(fh.Filename) {
+			errMsg := fmt.Sprintf("File '%s' has an unsupported format. Allowed formats: Images (JPEG, PNG, WebP, GIF, TIFF, BMP), PDF, and Word documents (DOCX, DOC).", fh.Filename)
+			log.Printf("[JOB] REJECTED from %s: %s", clientIP, errMsg)
+			http.Error(w, errMsg, http.StatusBadRequest)
+			return
 		}
 	}
 
-	var docInfos []services.DocumentInfo
-	var docIDs []int
+	// Generate unique ObjectId for the job (primary key and storage folder name)
+	objID := primitive.NewObjectID()
+	jobID := objID.Hex()
 
-	for _, handler := range files {
-		file, err := handler.Open()
-		if err != nil {
-			log.Printf("Failed to open uploaded file: %v", err)
-			continue
-		}
-		
-		// MIME Validation: read first 512 bytes to determine real content type
-		buffer := make([]byte, 512)
-		n, err := file.Read(buffer)
-		if err != nil && err != io.EOF {
-			file.Close()
-			continue
-		}
-		buffer = buffer[:n]
-		if _, err := file.Seek(0, 0); err != nil {
-			file.Close()
-			continue
-		}
-
-		contentType := http.DetectContentType(buffer)
-		if contentType != "application/pdf" && contentType != "image/jpeg" && contentType != "image/png" {
-			file.Close()
-			continue // Skip invalid file types
-		}
-
-		// Save file
-		newFilename, filePath, err := storage.SaveFile(file, contentType)
-		file.Close()
-		if err != nil {
-			log.Printf("Failed to save uploaded file: %v", err)
-			continue
-		}
-
-		// Use the sanitized original filename for display only
-		originalName := handler.Filename
-		if len(originalName) > 255 {
-			originalName = originalName[:255]
-		}
-
-		var docID int
-		var cID *string
-		if customerType == "existing" {
-			cID = &customerID
-		}
-
-		query := `INSERT INTO documents (workspace_id, filename, filepath, original_name, status, customer_id) 
-				  VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`
-		err = database.DB.QueryRow(query, workspaceID, newFilename, filePath, originalName, "uploaded", cID).Scan(&docID)
-		if err != nil {
-			os.Remove(filePath)
-			log.Printf("Failed to create document record: %v", err)
-			continue
-		}
-
-		// Log the upload event
-		userID := r.Context().Value(UserIDKey).(int)
-		LogEvent(workspaceID, userID, "document_uploaded", map[string]interface{}{
-			"document_id": docID,
-			"filename":    originalName,
-		})
-
-		docInfos = append(docInfos, services.DocumentInfo{
-			ID:       docID,
-			FilePath: filePath,
-		})
-		docIDs = append(docIDs, docID)
+	// Create job directory: ./uploads/<jobID>/
+	uploadBaseDir := os.Getenv("UPLOAD_DIR")
+	if uploadBaseDir == "" {
+		uploadBaseDir = "./uploads"
 	}
-
-	if len(docInfos) == 0 {
-		http.Error(w, "No valid documents were uploaded", http.StatusBadRequest)
+	jobDir := filepath.Join(uploadBaseDir, jobID)
+	if err := os.MkdirAll(jobDir, 0755); err != nil {
+		log.Printf("[JOB %s] ERROR: Failed to create job directory %s: %v", jobID, jobDir, err)
+		http.Error(w, "Failed to create storage directory", http.StatusInternalServerError)
 		return
 	}
+	log.Printf("[JOB %s] Initialized directory: %s (processing %d files)", jobID, jobDir, len(fileHeaders))
 
-	// Submit the batch of documents to Great Sage's V2 API
-	sendJobToGreatSage(docInfos)
+	var savedFiles []models.JobFile
+	var totalBytes int64
+
+	// Save each file into ./uploads/<jobID>/
+	for idx, fh := range fileHeaders {
+		src, err := fh.Open()
+		if err != nil {
+			log.Printf("[JOB %s] ERROR: Failed to open uploaded file header '%s': %v", jobID, fh.Filename, err)
+			http.Error(w, fmt.Sprintf("Failed to read file '%s'", fh.Filename), http.StatusBadRequest)
+			return
+		}
+
+		cleanName := filepath.Base(fh.Filename)
+		if cleanName == "" || cleanName == "." {
+			cleanName = fmt.Sprintf("file_%d%s", idx+1, filepath.Ext(fh.Filename))
+		}
+
+		destPath := filepath.Join(jobDir, cleanName)
+		dst, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+		if err != nil {
+			src.Close()
+			log.Printf("[JOB %s] ERROR: Failed to create destination file '%s': %v", jobID, destPath, err)
+			http.Error(w, "Failed to save uploaded file", http.StatusInternalServerError)
+			return
+		}
+
+		written, err := io.Copy(dst, src)
+		src.Close()
+		dst.Close()
+
+		if err != nil {
+			log.Printf("[JOB %s] ERROR: Failed to copy file contents to '%s': %v", jobID, destPath, err)
+			http.Error(w, "Failed to write file to disk", http.StatusInternalServerError)
+			return
+		}
+
+		ext := strings.ToLower(filepath.Ext(cleanName))
+		mime := allowedExtensions[ext]
+		totalBytes += written
+
+		log.Printf("[JOB %s] Saved file [%d/%d]: '%s' (%0.2f KB, %s)", jobID, idx+1, len(fileHeaders), cleanName, float64(written)/1024, mime)
+
+		savedFiles = append(savedFiles, models.JobFile{
+			Filename: cleanName,
+			Size:     written,
+			MimeType: mime,
+		})
+	}
+
+	job := models.Job{
+		ID:         objID,
+		UploadedAt: time.Now().UTC(),
+		Files:      savedFiles,
+	}
+
+	// Persist job metadata in MongoDB
+	if database.DB != nil {
+		_, err := database.GetCollection("jobs").InsertOne(r.Context(), job)
+		if err != nil {
+			log.Printf("[JOB %s] ERROR: Failed to record job in MongoDB: %v", jobID, err)
+		} else {
+			log.Printf("[JOB %s] SUCCESS: Job registered in MongoDB (id=%s, files=%d, total_size=%0.2f MB)", jobID, jobID, len(savedFiles), float64(totalBytes)/(1024*1024))
+		}
+	} else {
+		log.Printf("[JOB %s] SUCCESS: Job stored on disk (id=%s, files=%d, total_size=%0.2f MB)", jobID, jobID, len(savedFiles), float64(totalBytes)/(1024*1024))
+	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"message": fmt.Sprintf("%d files uploaded successfully", len(docIDs)),
-		"ids":     docIDs,
-	})
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(job)
 }
 
-// sendJobToGreatSage submits a batch of documents to Great Sage
-// for asynchronous OCR and AI classification processing using V2 APIs.
-func sendJobToGreatSage(docs []services.DocumentInfo) {
-	client, err := services.NewGreatSageClient()
-	if err != nil {
-		log.Printf("Great Sage client error: %v", err)
-		for _, doc := range docs {
-			database.DB.Exec("UPDATE documents SET status = 'failed' WHERE id = $1", doc.ID)
-		}
-		return
-	}
-
-	webhookURL := os.Getenv("API_BASE_URL")
-	if webhookURL == "" {
-		webhookURL = "http://backend:8080" // default for local docker
-	}
-	webhookURL = webhookURL + "/api/internal/webhook/jobs"
-
-	jobID, err := client.SubmitJob(docs, webhookURL)
-	if err != nil {
-		log.Printf("Failed to submit job to Great Sage: %v", err)
-		for _, doc := range docs {
-			database.DB.Exec("UPDATE documents SET status = 'failed' WHERE id = $1", doc.ID)
-		}
-		return
-	}
-
-	// Job submitted — mark all as processing and store the job ID
-	for _, doc := range docs {
-		_, err = database.DB.Exec("UPDATE documents SET status = 'processing', job_id = $1 WHERE id = $2", jobID, doc.ID)
-		if err != nil {
-			log.Printf("Document %d: failed to update status to processing: %v", doc.ID, err)
-		}
-	}
+// UploadDocument maintains backward compatibility for callers expecting UploadDocument.
+func UploadDocument(w http.ResponseWriter, r *http.Request) {
+	UploadBatch(w, r)
 }
