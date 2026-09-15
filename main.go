@@ -92,6 +92,10 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "role": role, "username": username})
 	}).Methods("GET")
 	protected.HandleFunc("/logout", handlers.Logout).Methods("POST")
+	protected.HandleFunc("/stats", handlers.GetStats).Methods("GET")
+	protected.HandleFunc("/jobs", handlers.GetJobs).Methods("GET")
+	protected.HandleFunc("/documents", handlers.GetJobs).Methods("GET")
+	protected.HandleFunc("/jobs/{id}/files/{filename}", handlers.DownloadJobFile).Methods("GET")
 
 	// Admin routes
 	admin := protected.PathPrefix("/admin").Subrouter()
@@ -103,19 +107,40 @@ func main() {
 	admin.HandleFunc("/wipe", handlers.WipeDatabase).Methods("POST")
 	admin.HandleFunc("/logs/stream", handlers.StreamLogs).Methods("GET")
 
-	// Static files & SPA routing (embedded in binary, with disk fallback for live editing)
+	// ServiceWorker cleanup route: automatically kills and unregisters any legacy browser service worker from :8080
+	r.HandleFunc("/sw.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/javascript")
+		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+		w.Write([]byte(`self.addEventListener('install', (e) => { self.skipWaiting(); });
+self.addEventListener('activate', (e) => {
+  e.waitUntil(
+    caches.keys().then((keys) => Promise.all(keys.map((k) => caches.delete(k))))
+      .then(() => self.registration.unregister())
+  );
+});
+`))
+	}).Methods("GET")
+
+	// Static files & SPA routing
 	publicSubFS, _ := fs.Sub(embeddedPublic, "public")
 	embeddedFileServer := http.FileServer(http.FS(publicSubFS))
-	diskFileServer := http.FileServer(http.Dir("./public"))
 
-	serveIndex := func(w http.ResponseWriter, r *http.Request) {
-		// 1. Try disk first (for live edits without recompile)
-		if data, err := os.ReadFile("./public/index.html"); err == nil {
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.Write(data)
-			return
+	serveSPA := func(w http.ResponseWriter, r *http.Request) {
+		cleanPath := strings.TrimPrefix(filepath.Clean(r.URL.Path), string(filepath.Separator))
+		cleanPath = strings.ReplaceAll(cleanPath, "\\", "/")
+		if cleanPath != "" && cleanPath != "." {
+			if publicSubFS != nil {
+				if f, err := publicSubFS.Open(cleanPath); err == nil {
+					stat, err := f.Stat()
+					f.Close()
+					if err == nil && !stat.IsDir() {
+						embeddedFileServer.ServeHTTP(w, r)
+						return
+					}
+				}
+			}
 		}
-		// 2. Fallback to embedded binary assets
+
 		if publicSubFS != nil {
 			if data, err := fs.ReadFile(publicSubFS, "index.html"); err == nil {
 				w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -127,38 +152,39 @@ func main() {
 	}
 
 	r.PathPrefix("/").Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cleanPath := strings.TrimPrefix(filepath.Clean(r.URL.Path), string(filepath.Separator))
-		cleanPath = strings.ReplaceAll(cleanPath, "\\", "/")
-		if cleanPath == "" || cleanPath == "." {
-			serveIndex(w, r)
+		// If running in production mode, serve the embedded production SPA
+		if os.Getenv("ENV") == "production" {
+			serveSPA(w, r)
 			return
 		}
 
-		// 1. Check disk file first
-		diskPath := filepath.Join("./public", cleanPath)
-		if stat, err := os.Stat(diskPath); err == nil && !stat.IsDir() {
-			diskFileServer.ServeHTTP(w, r)
+		// In development: port 8080 is STRICTLY an API backend. No HTML is served.
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/" {
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"service":   "Poneglyph Backend API",
+				"status":    "online",
+				"port":      8080,
+				"endpoints": "/api/*",
+				"frontend":  "http://localhost:5173",
+			})
 			return
 		}
 
-		// 2. Check embedded filesystem in binary
-		if publicSubFS != nil {
-			if f, err := publicSubFS.Open(cleanPath); err == nil {
-				stat, err := f.Stat()
-				f.Close()
-				if err == nil && !stat.IsDir() {
-					embeddedFileServer.ServeHTTP(w, r)
-					return
-				}
-			}
-		}
-
-		// 3. SPA Fallback: client routes (e.g. /upload) serve index.html
-		serveIndex(w, r)
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":    "Endpoint not found on Go API",
+			"frontend": "http://localhost:5173",
+		})
 	}))
 
-	log.Println("Server listening on :8080")
-	if err := http.ListenAndServe(":8080", r); err != nil {
+	bindAddr := os.Getenv("BIND_ADDR")
+	if bindAddr == "" {
+		bindAddr = "127.0.0.1:8080"
+	}
+	log.Printf("Server listening on http://%s", bindAddr)
+	if err := http.ListenAndServe(bindAddr, r); err != nil {
 		log.Fatalf("Server failed to start: %v", err)
 	}
 }
