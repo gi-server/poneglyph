@@ -1,4 +1,21 @@
-# Poneglyph
+<p align="center">
+  <img src="logo.png" alt="Poneglyph Logo" width="130" />
+</p>
+
+<h1 align="center">Poneglyph</h1>
+
+<p align="center">
+  <strong>High-Speed Batch Document Ingestion Gateway</strong><br>
+  <em>Smart • Local • Secure</em>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat&logo=go" alt="Go" />
+  <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat&logo=react" alt="React" />
+  <img src="https://img.shields.io/badge/Vite-8-646CFF?style=flat&logo=vite" alt="Vite" />
+  <img src="https://img.shields.io/badge/Tailwind-v4-38B2AC?style=flat&logo=tailwind-css" alt="Tailwind CSS" />
+  <img src="https://img.shields.io/badge/MongoDB-7.0+-47A248?style=flat&logo=mongodb" alt="MongoDB" />
+</p>
 
 Poneglyph is a high-speed batch document ingestion system built with a **Go backend** and a **Vite + React + Tailwind CSS v4 frontend**. It features real-time terminal logging, automated disk storage organized by MongoDB native `ObjectId`, strict file limit validations, and standalone single-executable binary packaging.
 

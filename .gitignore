@@ -20,7 +20,8 @@ Thumbs.db
 # Scratch files
 scratch/
 
-# Frontend and node dependencies
+# Frontend and build artifacts
 frontend/node_modules/
 frontend/dist/
+/public/*
 
