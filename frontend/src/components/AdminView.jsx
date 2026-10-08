@@ -28,6 +28,7 @@ export default function AdminView({ currentUser }) {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [newRole, setNewRole] = useState('worker');
   const [createError, setCreateError] = useState('');
 
   const [resetModalUser, setResetModalUser] = useState(null);
@@ -122,7 +123,7 @@ export default function AdminView({ currentUser }) {
       const res = await fetch('/api/admin/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: newUsername, password: newPassword }),
+        body: JSON.stringify({ username: newUsername, password: newPassword, role: newRole }),
       });
 
       if (!res.ok) {
@@ -133,6 +134,7 @@ export default function AdminView({ currentUser }) {
       setCreateModalOpen(false);
       setNewUsername('');
       setNewPassword('');
+      setNewRole('worker');
       fetchUsers();
     } catch (err) {
       setCreateError(err.message);
@@ -240,17 +242,19 @@ export default function AdminView({ currentUser }) {
           <span>Live Audit Logs</span>
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
         </button>
-        <button
-          onClick={() => setActiveSubtab('danger')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${
-            activeSubtab === 'danger'
-              ? 'bg-red-600 text-white shadow-md shadow-red-600/25'
-              : 'text-slate-400 hover:text-red-400'
-          }`}
-        >
-          <AlertTriangle className="w-4 h-4" />
-          <span>Danger Zone</span>
-        </button>
+        {currentUser?.role === 'developer' && (
+          <button
+            onClick={() => setActiveSubtab('danger')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${
+              activeSubtab === 'danger'
+                ? 'bg-red-600 text-white shadow-md shadow-red-600/25'
+                : 'text-slate-400 hover:text-red-400'
+            }`}
+          >
+            <AlertTriangle className="w-4 h-4" />
+            <span>Danger Zone</span>
+          </button>
+        )}
       </div>
 
       {/* TAB 1: User Management */}
@@ -297,7 +301,9 @@ export default function AdminView({ currentUser }) {
                     <td className="px-6 py-4 font-semibold text-white">{u.username}</td>
                     <td className="px-6 py-4">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                        u.role === 'admin'
+                        u.role === 'developer'
+                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                          : u.role === 'admin'
                           ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
                           : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
                       }`}>
@@ -312,30 +318,36 @@ export default function AdminView({ currentUser }) {
                       )}
                     </td>
                     <td className="px-6 py-4 text-right">
-                      {u.role !== 'admin' && (
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            onClick={() => handleToggleStatus(u)}
-                            className={`px-3 py-1 rounded-lg text-xs font-medium border transition cursor-pointer ${
-                              u.is_disabled
-                                ? 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-emerald-500/20'
-                                : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700/60'
-                            }`}
-                          >
-                            {u.is_disabled ? 'Enable' : 'Disable'}
-                          </button>
-                          <button
-                            onClick={() => {
-                              setResetModalUser(u);
-                              setResetPasswordVal('');
-                              setResetError('');
-                            }}
-                            className="px-3 py-1 rounded-lg text-xs font-medium bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-400 border border-indigo-500/20 transition cursor-pointer"
-                          >
-                            Reset Password
-                          </button>
-                        </div>
-                      )}
+                      {/* Show actions only for users with strictly lower role rank */}
+                      {(() => {
+                        const myRank = currentUser?.role === 'developer' ? 3 : currentUser?.role === 'admin' ? 2 : 1;
+                        const theirRank = u.role === 'developer' ? 3 : u.role === 'admin' ? 2 : 1;
+                        if (theirRank >= myRank) return null;
+                        return (
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => handleToggleStatus(u)}
+                              className={`px-3 py-1 rounded-lg text-xs font-medium border transition cursor-pointer ${
+                                u.is_disabled
+                                  ? 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-emerald-500/20'
+                                  : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700/60'
+                              }`}
+                            >
+                              {u.is_disabled ? 'Enable' : 'Disable'}
+                            </button>
+                            <button
+                              onClick={() => {
+                                setResetModalUser(u);
+                                setResetPasswordVal('');
+                                setResetError('');
+                              }}
+                              className="px-3 py-1 rounded-lg text-xs font-medium bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-400 border border-indigo-500/20 transition cursor-pointer"
+                            >
+                              Reset Password
+                            </button>
+                          </div>
+                        );
+                      })()}
                     </td>
                   </tr>
                 ))}
@@ -466,6 +478,19 @@ export default function AdminView({ currentUser }) {
                   placeholder="Min 6 characters"
                   className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 text-sm focus:outline-none focus:border-indigo-500"
                 />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">Role</label>
+                <select
+                  value={newRole}
+                  onChange={(e) => setNewRole(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 text-sm focus:outline-none focus:border-indigo-500"
+                >
+                  <option value="worker">Worker (counter/serving staff)</option>
+                  {currentUser?.role === 'developer' && (
+                    <option value="admin">Admin (no delete access)</option>
+                  )}
+                </select>
               </div>
               <div className="flex items-center justify-end gap-3 pt-2">
                 <button

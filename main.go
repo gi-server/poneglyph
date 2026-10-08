@@ -97,15 +97,19 @@ func main() {
 	protected.HandleFunc("/documents", handlers.GetJobs).Methods("GET")
 	protected.HandleFunc("/jobs/{id}/files/{filename}", handlers.DownloadJobFile).Methods("GET")
 
-	// Admin routes
+	// Admin routes (admin + developer)
 	admin := protected.PathPrefix("/admin").Subrouter()
 	admin.Use(handlers.AdminMiddleware)
 	admin.HandleFunc("/users", handlers.GetUsers).Methods("GET")
 	admin.HandleFunc("/users", handlers.CreateUser).Methods("POST")
 	admin.HandleFunc("/users/{id}/disable", handlers.DisableUser).Methods("POST")
 	admin.HandleFunc("/users/{id}/reset_password", handlers.ResetPassword).Methods("POST")
-	admin.HandleFunc("/wipe", handlers.WipeDatabase).Methods("POST")
 	admin.HandleFunc("/logs/stream", handlers.StreamLogs).Methods("GET")
+
+	// Developer-only routes (wipe / destructive operations)
+	dev := protected.PathPrefix("/admin").Subrouter()
+	dev.Use(handlers.DeveloperMiddleware)
+	dev.HandleFunc("/wipe", handlers.WipeDatabase).Methods("POST")
 
 	// ServiceWorker cleanup route: automatically kills and unregisters any legacy browser service worker from :8080
 	r.HandleFunc("/sw.js", func(w http.ResponseWriter, r *http.Request) {

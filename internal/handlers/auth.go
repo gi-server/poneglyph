@@ -119,54 +119,53 @@ func clearLoginAttempts(ip string) {
 	delete(loginAttempts, ip)
 }
 
-// SeedAdminUser only inserts the admin if no users exist.
-// It does NOT overwrite existing passwords on every startup.
+// SeedAdminUser ensures the three demo users exist on every startup.
+// seedDemoUser is idempotent — it checks for username existence before inserting,
+// so existing users (and their passwords) are never overwritten.
 func SeedAdminUser() {
+	// Seed developer (highest privilege)
+	seedDemoUser("dev", "dev123", "developer")
+	// Seed admin
+	seedDemoUser("admin", "admin", "admin")
+	// Seed worker (counter/serving staff)
+	seedDemoUser("worker", "worker123", "worker")
+}
+
+// seedDemoUser inserts a user with the given role if they don't already exist.
+func seedDemoUser(username, password, role string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	usersColl := database.GetCollection("users")
-	count, err := usersColl.CountDocuments(ctx, bson.M{})
-	if err != nil {
-		log.Printf("Error checking users count: %v", err)
-		return
-	}
-
-	if count == 0 {
-		hash, err := argon2id.CreateHash("admin", argon2id.DefaultParams)
+	count, err := usersColl.CountDocuments(ctx, bson.M{"username": username})
+	if err == nil && count == 0 {
+		hash, err := argon2id.CreateHash(password, argon2id.DefaultParams)
 		if err != nil {
-			log.Printf("Error hashing password: %v", err)
+			log.Printf("Error hashing password for %s: %v", username, err)
 			return
 		}
-		adminID, err := database.GetNextSequence("users")
+		userID, err := database.GetNextSequence("users")
 		if err != nil {
-			log.Printf("Error getting sequence for admin: %v", err)
+			log.Printf("Error getting sequence for %s: %v", username, err)
 			return
 		}
-		adminUser := models.User{
-			ID:           adminID,
-			Username:     "admin",
+		u := models.User{
+			ID:           userID,
+			Username:     username,
 			PasswordHash: hash,
-			Role:         "admin",
+			Role:         role,
 			IsDisabled:   false,
 			CreatedAt:    time.Now(),
 		}
-		_, err = usersColl.InsertOne(ctx, adminUser)
-		if err != nil {
-			log.Printf("Error seeding admin user: %v", err)
+		if _, err := usersColl.InsertOne(ctx, u); err != nil {
+			log.Printf("Error seeding user %s: %v", username, err)
 			return
 		}
-		log.Println("Seeded default admin user. IMPORTANT: Change the default password immediately.")
-	} else {
-		// Ensure the admin user has the admin role (for migrations)
-		usersColl.UpdateOne(ctx, bson.M{"username": "admin"}, bson.M{"$set": bson.M{"role": "admin"}})
+		log.Printf("Seeded demo user: %s (role: %s)", username, role)
 	}
-
-	// Seed test users
-	seedTestUser("user1", "password123")
-	seedTestUser("user2", "password123")
 }
 
+// seedTestUser is kept for backward compatibility but no longer called by default.
 func seedTestUser(username, password string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -180,7 +179,7 @@ func seedTestUser(username, password string) {
 			ID:           userID,
 			Username:     username,
 			PasswordHash: hash,
-			Role:         "user",
+			Role:         "worker",
 			IsDisabled:   false,
 			CreatedAt:    time.Now(),
 		}
@@ -188,6 +187,7 @@ func seedTestUser(username, password string) {
 		log.Printf("Seeded test user: %s", username)
 	}
 }
+
 
 func Login(w http.ResponseWriter, r *http.Request) {
 	clientIP := r.RemoteAddr
@@ -332,9 +332,10 @@ func AuthMiddleware(next http.Handler) http.Handler {
 		if err == nil {
 			ctx = context.WithValue(ctx, RoleKey, user.Role)
 
-			// Resolve WorkspaceID
+			// Resolve WorkspaceID:
+			// admin and developer own their own workspace; worker inherits from their creator (AdminID)
 			var workspaceID int
-			if user.Role == "admin" {
+			if user.Role == "admin" || user.Role == "developer" {
 				workspaceID = claims.UserID
 			} else if user.AdminID != nil && *user.AdminID > 0 {
 				workspaceID = *user.AdminID

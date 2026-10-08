@@ -128,22 +128,30 @@ export default function LoginView({ onLoginSuccess }) {
             {/* Demo Quick-Fill Buttons */}
             <div className="mt-8 pt-6 border-t border-slate-800/80">
               <p className="text-xs text-slate-400 text-center mb-3">Quick demo access:</p>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleQuickFill('dev', 'dev123')}
+                  className="px-3 py-2 rounded-lg bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-xs text-slate-300 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>dev / dev123</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => handleQuickFill('admin', 'admin')}
                   className="px-3 py-2 rounded-lg bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-xs text-slate-300 transition flex items-center justify-center gap-1.5 cursor-pointer"
                 >
-                  <CheckCircle2 className="w-3.5 h-3.5 text-indigo-400" />
-                  <span>Admin / admin</span>
+                  <CheckCircle2 className="w-3.5 h-3.5 text-purple-400" />
+                  <span>admin / admin</span>
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleQuickFill('user1', 'password123')}
+                  onClick={() => handleQuickFill('worker', 'worker123')}
                   className="px-3 py-2 rounded-lg bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-xs text-slate-300 transition flex items-center justify-center gap-1.5 cursor-pointer"
                 >
-                  <CheckCircle2 className="w-3.5 h-3.5 text-pink-400" />
-                  <span>user1 / password123</span>
+                  <CheckCircle2 className="w-3.5 h-3.5 text-blue-400" />
+                  <span>worker / worker123</span>
                 </button>
               </div>
             </div>
