@@ -19,6 +19,29 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+// validRoles is the complete set of assignable roles.
+var validRoles = map[string]bool{
+	"worker":    true,
+	"admin":     true,
+	"developer": true,
+}
+
+// roleRank returns a numeric rank so we can enforce hierarchy:
+// developer (3) > admin (2) > worker (1)
+func roleRank(role string) int {
+	switch role {
+	case "developer":
+		return 3
+	case "admin":
+		return 2
+	case "worker":
+		return 1
+	default:
+		return 0
+	}
+}
+
+// AdminMiddleware allows access to users with role "admin" OR "developer".
 func AdminMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		userID, ok := r.Context().Value(UserIDKey).(int)
@@ -29,12 +52,33 @@ func AdminMiddleware(next http.Handler) http.Handler {
 
 		var user models.User
 		err := database.GetCollection("users").FindOne(r.Context(), bson.M{"id": userID}).Decode(&user)
-		if err != nil || user.Role != "admin" {
-			http.Error(w, "Forbidden: Admins only", http.StatusForbidden)
+		if err != nil || (user.Role != "admin" && user.Role != "developer") {
+			http.Error(w, "Forbidden: Admins and Developers only", http.StatusForbidden)
 			return
 		}
 
-		ctx := context.WithValue(r.Context(), "role", user.Role)
+		ctx := context.WithValue(r.Context(), RoleKey, user.Role)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// DeveloperMiddleware allows access ONLY to users with role "developer".
+func DeveloperMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		userID, ok := r.Context().Value(UserIDKey).(int)
+		if !ok {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		var user models.User
+		err := database.GetCollection("users").FindOne(r.Context(), bson.M{"id": userID}).Decode(&user)
+		if err != nil || user.Role != "developer" {
+			http.Error(w, "Forbidden: Developers only", http.StatusForbidden)
+			return
+		}
+
+		ctx := context.WithValue(r.Context(), RoleKey, user.Role)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -62,6 +106,7 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
+		Role     string `json:"role"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid payload", http.StatusBadRequest)
@@ -73,13 +118,32 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Default role is "worker" if not specified
+	if req.Role == "" {
+		req.Role = "worker"
+	}
+	if !validRoles[req.Role] {
+		http.Error(w, "Invalid role. Must be one of: worker, admin, developer", http.StatusBadRequest)
+		return
+	}
+
+	// Enforce hierarchy: you can only create users with a role strictly below yours
+	actorID, _ := r.Context().Value(UserIDKey).(int)
+	var actorUser models.User
+	if err := database.GetCollection("users").FindOne(r.Context(), bson.M{"id": actorID}).Decode(&actorUser); err != nil {
+		http.Error(w, "Could not verify actor role", http.StatusInternalServerError)
+		return
+	}
+	if roleRank(req.Role) >= roleRank(actorUser.Role) {
+		http.Error(w, "Forbidden: you cannot create a user with equal or higher role than your own", http.StatusForbidden)
+		return
+	}
+
 	hash, err := argon2id.CreateHash(req.Password, argon2id.DefaultParams)
 	if err != nil {
 		http.Error(w, "Failed to hash password", http.StatusInternalServerError)
 		return
 	}
-
-	adminID, _ := r.Context().Value(UserIDKey).(int)
 
 	userID, err := database.GetNextSequence("users")
 	if err != nil {
@@ -91,8 +155,8 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 		ID:           userID,
 		Username:     req.Username,
 		PasswordHash: hash,
-		Role:         "user",
-		AdminID:      &adminID,
+		Role:         req.Role,
+		AdminID:      &actorID,
 		IsDisabled:   false,
 		CreatedAt:    time.Now(),
 	}
@@ -103,10 +167,10 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	LogEvent(adminID, adminID, "user_created", map[string]interface{}{"created_user_id": userID, "username": req.Username})
+	LogEvent(actorID, actorID, "user_created", map[string]interface{}{"created_user_id": userID, "username": req.Username, "role": req.Role})
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"message": "User created", "id": userID})
+	json.NewEncoder(w).Encode(map[string]interface{}{"message": "User created", "id": userID, "role": req.Role})
 }
 
 func DisableUser(w http.ResponseWriter, r *http.Request) {
@@ -117,14 +181,28 @@ func DisableUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var user models.User
-	err = database.GetCollection("users").FindOne(r.Context(), bson.M{"id": targetID, "role": bson.M{"$ne": "admin"}}).Decode(&user)
-	if err != nil {
-		http.Error(w, "User not found or cannot disable an admin", http.StatusForbidden)
+	// Fetch actor
+	actorID, _ := r.Context().Value(UserIDKey).(int)
+	var actorUser models.User
+	if err := database.GetCollection("users").FindOne(r.Context(), bson.M{"id": actorID}).Decode(&actorUser); err != nil {
+		http.Error(w, "Could not verify actor role", http.StatusInternalServerError)
 		return
 	}
 
-	newDisabled := !user.IsDisabled
+	// Fetch target
+	var target models.User
+	if err := database.GetCollection("users").FindOne(r.Context(), bson.M{"id": targetID}).Decode(&target); err != nil {
+		http.Error(w, "User not found", http.StatusNotFound)
+		return
+	}
+
+	// Cannot disable someone with equal or higher role
+	if roleRank(target.Role) >= roleRank(actorUser.Role) {
+		http.Error(w, "Forbidden: cannot disable a user with equal or higher role", http.StatusForbidden)
+		return
+	}
+
+	newDisabled := !target.IsDisabled
 	_, err = database.GetCollection("users").UpdateOne(
 		r.Context(),
 		bson.M{"id": targetID},
@@ -135,8 +213,7 @@ func DisableUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	adminID, _ := r.Context().Value(UserIDKey).(int)
-	LogEvent(adminID, adminID, "user_toggled_disable", map[string]interface{}{"target_user_id": targetID, "now_disabled": newDisabled})
+	LogEvent(actorID, actorID, "user_toggled_disable", map[string]interface{}{"target_user_id": targetID, "now_disabled": newDisabled})
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"message": "User status updated", "is_disabled": newDisabled})
@@ -158,6 +235,27 @@ func ResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Fetch actor
+	actorID, _ := r.Context().Value(UserIDKey).(int)
+	var actorUser models.User
+	if err := database.GetCollection("users").FindOne(r.Context(), bson.M{"id": actorID}).Decode(&actorUser); err != nil {
+		http.Error(w, "Could not verify actor role", http.StatusInternalServerError)
+		return
+	}
+
+	// Fetch target
+	var target models.User
+	if err := database.GetCollection("users").FindOne(r.Context(), bson.M{"id": targetID}).Decode(&target); err != nil {
+		http.Error(w, "User not found", http.StatusNotFound)
+		return
+	}
+
+	// Cannot reset password of someone with equal or higher role
+	if roleRank(target.Role) >= roleRank(actorUser.Role) {
+		http.Error(w, "Forbidden: cannot reset password of a user with equal or higher role", http.StatusForbidden)
+		return
+	}
+
 	hash, err := argon2id.CreateHash(req.Password, argon2id.DefaultParams)
 	if err != nil {
 		http.Error(w, "Failed to hash password", http.StatusInternalServerError)
@@ -166,25 +264,25 @@ func ResetPassword(w http.ResponseWriter, r *http.Request) {
 
 	res, err := database.GetCollection("users").UpdateOne(
 		r.Context(),
-		bson.M{"id": targetID, "role": bson.M{"$ne": "admin"}},
+		bson.M{"id": targetID},
 		bson.M{"$set": bson.M{"password_hash": hash}},
 	)
 	if err != nil || res.MatchedCount == 0 {
-		http.Error(w, "User not found or cannot reset admin password", http.StatusForbidden)
+		http.Error(w, "Failed to update password", http.StatusInternalServerError)
 		return
 	}
 
-	adminID, _ := r.Context().Value(UserIDKey).(int)
-	LogEvent(adminID, adminID, "user_password_reset", map[string]interface{}{"target_user_id": targetID})
+	LogEvent(actorID, actorID, "user_password_reset", map[string]interface{}{"target_user_id": targetID})
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"message": "Password reset successfully"})
 }
 
 // WipeDatabase deletes all jobs data, audit logs, and removes uploaded job folders from disk.
+// DEVELOPER ONLY — enforced by DeveloperMiddleware on the route.
 // The caller must supply {"confirmation": "wipe my data"} in the request body.
 func WipeDatabase(w http.ResponseWriter, r *http.Request) {
-	adminID, ok := r.Context().Value(UserIDKey).(int)
+	actorID, ok := r.Context().Value(UserIDKey).(int)
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
@@ -204,11 +302,11 @@ func WipeDatabase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ensure this is an admin
+	// Defence-in-depth: double-check role inside handler
 	var user models.User
-	err := database.GetCollection("users").FindOne(r.Context(), bson.M{"id": adminID}).Decode(&user)
-	if err != nil || user.Role != "admin" {
-		http.Error(w, "Forbidden: Only admins can wipe data", http.StatusForbidden)
+	err := database.GetCollection("users").FindOne(r.Context(), bson.M{"id": actorID}).Decode(&user)
+	if err != nil || user.Role != "developer" {
+		http.Error(w, "Forbidden: Only developers can wipe data", http.StatusForbidden)
 		return
 	}
 
@@ -237,8 +335,8 @@ func WipeDatabase(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	log.Printf("WipeDatabase: System wiped by admin %d — %d job folders removed from disk", adminID, deletedFolders)
-	LogEvent(adminID, adminID, "data_wipe_completed", map[string]interface{}{"folders_deleted": deletedFolders})
+	log.Printf("WipeDatabase: System wiped by developer %d — %d job folders removed from disk", actorID, deletedFolders)
+	LogEvent(actorID, actorID, "data_wipe_completed", map[string]interface{}{"folders_deleted": deletedFolders})
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{

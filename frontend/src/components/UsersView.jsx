@@ -119,7 +119,9 @@ export default function UsersView({ user, onNavigate }) {
                       </td>
                       <td className="px-6 py-4">
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                          u.role === 'admin'
+                          u.role === 'developer'
+                            ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                            : u.role === 'admin'
                             ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
                             : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
                         }`}>

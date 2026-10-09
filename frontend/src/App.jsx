@@ -92,11 +92,20 @@ export default function App() {
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'upload', label: 'Upload Documents', icon: UploadCloud },
     { id: 'documents', label: 'Documents & Batches', icon: Files },
-    { id: 'users', label: 'Users Directory', icon: Users },
   ];
 
-  if (user?.role === 'admin') {
-    navItems.push({ id: 'admin', label: 'Admin Control', icon: Settings, adminOnly: true });
+  if (user?.role === 'admin' || user?.role === 'developer') {
+    navItems.push({ id: 'users', label: 'Users Directory', icon: Users });
+    navItems.push({
+      id: 'admin',
+      label: 'Admin Control',
+      icon: Settings,
+      badge: user?.role === 'developer' ? 'DEV' : 'ADMIN',
+      badgeColor: user?.role === 'developer' ? 'text-emerald-300 bg-emerald-500/20' : 'text-purple-300 bg-purple-500/20',
+    });
+  } else {
+    // Workers can see users directory (read-only view)
+    navItems.push({ id: 'users', label: 'Users Directory', icon: Users });
   }
 
   return (
@@ -164,9 +173,9 @@ export default function App() {
                     <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
                     <span>{item.label}</span>
                   </div>
-                  {item.adminOnly && (
-                    <span className="text-[10px] bg-purple-500/20 text-purple-300 px-1.5 py-0.5 rounded font-mono font-bold">
-                      ADMIN
+                  {item.badge && (
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-bold ${item.badgeColor || 'text-purple-300 bg-purple-500/20'}`}>
+                      {item.badge}
                     </span>
                   )}
                 </button>
@@ -215,7 +224,7 @@ export default function App() {
           {currentTab === 'users' && (
             <UsersView user={user} onNavigate={setCurrentTab} />
           )}
-          {currentTab === 'admin' && user?.role === 'admin' && (
+          {currentTab === 'admin' && (user?.role === 'admin' || user?.role === 'developer') && (
             <AdminView currentUser={user} />
           )}
         </div>
